@@ -1,0 +1,5 @@
+{
+  "name": "AnimGen Studio",
+  "description": "A frontend interface for AI Character Generation and Animation pipelines.",
+  "requestFramePermissions": []
+}
