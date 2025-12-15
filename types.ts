@@ -2,10 +2,10 @@ import bodyCasualRed from './assets/1.png';
 import bodyRaincoat from './assets/2.png';
 import bodyOverallsBrown from './assets/3.png';
 import bodyDressPink from './assets/4.png';
-import bodyJacketBlue from './assets/5.png';
-import bodyAstronaut from './assets/6.png';
-import bodyOverallsDenim from './assets/7.png';
-import bodyHero from './assets/8.png';
+import bodyPrincess from './assets/10.png';
+import bodyAstronaut from './assets/8.png';
+import bodyOverallsDenim from './assets/6.png';
+import bodyHero from './assets/7.png';
 import bodyStreetwear from './assets/9.png';
 
 // Common Types
@@ -70,9 +70,9 @@ export const BODY_TEMPLATES = [
     src: bodyDressPink
   },
   {
-    id: 'jacket_blue',
-    name: 'Blue Jacket',
-    src: bodyJacketBlue
+    id: 'princess',
+    name: 'Princess',
+    src: bodyPrincess
   },
   {
     id: 'astronaut',
