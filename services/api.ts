@@ -1,10 +1,11 @@
-import { 
-  AnimationAction, 
-  CharacterResponse, 
-  AnimationInitResponse, 
-  AnimationStep1Response, 
-  AnimationStep2Response, 
-  AnimationStep3Response 
+import {
+  AnimationAction,
+  CharacterResponse,
+  AnimationInitResponse,
+  AnimationStep1Response,
+  AnimationStep2Response,
+  AnimationStep3Response,
+  GameResourceResponse
 } from '../types';
 
 // Configuration
@@ -16,12 +17,12 @@ export const FILE_BASE_URL = 'http://127.0.0.1:8000';
  */
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  
+
   // --- LOG REQUEST ---
   // Sử dụng groupCollapsed để console gọn gàng, bấm vào mới mở ra chi tiết
   console.groupCollapsed(`🚀 API Request: [${options.method || 'GET'}] ${endpoint}`);
   console.log('🔗 URL:', url);
-  
+
   // Log body đặc biệt xử lý cho FormData để nhìn thấy nội dung file/text
   if (options.body instanceof FormData) {
     console.log('📂 Body (FormData):');
@@ -36,10 +37,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   } else if (options.body) {
     console.log('📦 Body:', options.body);
   }
-  
+
   try {
     const response = await fetch(url, options);
-    
+
     // --- LOG RESPONSE ERROR ---
     if (!response.ok) {
       const errorBody = await response.text();
@@ -54,14 +55,14 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
         throw new Error(errorBody || `API Error ${response.status}: ${response.statusText}`);
       }
     }
-    
+
     const data = await response.json() as T;
 
     // --- LOG RESPONSE SUCCESS ---
     console.log(`✅ Status: ${response.status}`);
     console.log('DATA:', data);
     console.groupEnd(); // Đóng group log
-    
+
     return data;
 
   } catch (error) {
@@ -96,8 +97,8 @@ export const createCharacterByPrompt = async (prompt: string): Promise<Character
 };
 
 export const adjustCharacter = async (
-  faceFile: File, 
-  bodyFile: Blob, 
+  faceFile: File,
+  bodyFile: Blob,
   params: { anchorX: number; anchorY: number; scaleW: number; scaleH: number }
 ): Promise<CharacterResponse> => {
   const formData = new FormData();
@@ -141,6 +142,14 @@ export const runAnimationStep2 = async (animId: string): Promise<AnimationStep2R
 
 export const runAnimationStep3 = async (animId: string, action: AnimationAction | string): Promise<AnimationStep3Response> => {
   return request<AnimationStep3Response>(`/animation/${animId}/step3?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+  });
+};
+
+// --- Game Services ---
+
+export const getGameResources = async (gameId: string): Promise<GameResourceResponse> => {
+  return request<GameResourceResponse>(`/game/${gameId}/get_resource`, {
     method: 'POST',
   });
 };

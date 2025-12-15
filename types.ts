@@ -44,6 +44,14 @@ export interface AnimationStep3Response {
   gif_url: string;
 }
 
+export interface GameResourceResponse {
+  game_id: string;
+  action_gif_url: string | null;
+  background_url: string | null;
+  detected_objects: any[]; // Bạn có thể định nghĩa type kỹ hơn nếu biết cấu trúc JSON
+}
+
+
 export enum AnimationAction {
   STAND = 'standing',
   RUN = 'running',
