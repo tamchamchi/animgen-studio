@@ -5,7 +5,8 @@ import {
   AnimationStep1Response,
   AnimationStep2Response,
   AnimationStep3Response,
-  GameResourceResponse
+  GameResourcesResponse,
+  DetectedObject
 } from '../types';
 
 // Configuration
@@ -148,8 +149,47 @@ export const runAnimationStep3 = async (animId: string, action: AnimationAction 
 
 // --- Game Services ---
 
-export const getGameResources = async (gameId: string): Promise<GameResourceResponse> => {
-  return request<GameResourceResponse>(`/game/${gameId}/get_resource`, {
+export const getGameResources = async (gameId: string): Promise<GameResourcesResponse> => {
+  return request<GameResourcesResponse>(`/game/${gameId}/get_resource`, {
     method: 'POST',
   });
+};
+
+// --- Background Services ---
+
+export const analyzeBackgroundModel = async (
+  animId: string,
+  file: File,
+  confidenceThreshold: number = 0.4
+): Promise<DetectedObject[]> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  // Note: Using query param for configuration as per typical FastAPI pattern
+  return request<DetectedObject[]>(
+    `/background/${animId}/analyze/model?confidence_threshold=${confidenceThreshold}`,
+    {
+      method: 'POST',
+      body: formData,
+    }
+  );
+};
+
+export const analyzeBackgroundSvg = async (
+  animId: string,
+  file: File,
+  topK: number = 30
+): Promise<DetectedObject[]> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  // Assuming /analyze/svg based on context, though prompt had duplicate path.
+  // Adjusting path to likely intention.
+  return request<DetectedObject[]>(
+    `/background/${animId}/analyze/svg?top_k=${topK}`,
+    {
+      method: 'POST',
+      body: formData,
+    }
+  );
 };

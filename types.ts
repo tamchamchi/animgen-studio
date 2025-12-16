@@ -44,14 +44,6 @@ export interface AnimationStep3Response {
   gif_url: string;
 }
 
-export interface GameResourceResponse {
-  game_id: string;
-  action_gif_url: string | null;
-  background_url: string | null;
-  detected_objects: any[]; // Bạn có thể định nghĩa type kỹ hơn nếu biết cấu trúc JSON
-}
-
-
 export enum AnimationAction {
   STAND = 'standing',
   RUN = 'running',
@@ -108,3 +100,15 @@ export const BODY_TEMPLATES = [
     src: bodyStreetwear
   },
 ];
+
+export interface DetectedObject {
+  label: string;
+  polygon?: number[][]; // [[x1, y1], [x2, y2], ...]
+}
+
+export interface GameResourcesResponse {
+  background_url?: string;
+  detected_objects?: DetectedObject[];
+  action_gif_urls?: string[]; // Changed from single url to list of strings
+  [key: string]: any; 
+}
