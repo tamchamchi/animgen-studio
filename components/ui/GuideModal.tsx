@@ -13,12 +13,12 @@ export const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
     {
       icon: <Bot className="text-indigo-400" size={20} />,
       title: "1. Create Your Character",
-      description: "Use the Camera to capture a face or type a text Prompt to generate your unique hero."
+      description: "Use the Camera to capture a face or type a text Prompt. If the face appears misaligned, use the 'Adjust Position' feature to manually refine the placement."
     },
     {
       icon: <Clapperboard className="text-indigo-400" size={20} />,
       title: "2. Animation Studio",
-      description: "Render all essential actions: standing, running, jumping, speaking, waving, and dancing to fully enable GameZone gameplay."
+      description: "Render all essential actions: standing, running, jumping, waving, and dancing to fully enable GameZone gameplay."
     },
     {
       icon: <Gamepad2 className="text-indigo-400" size={20} />,

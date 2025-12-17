@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { FileUpload } from './ui/FileUpload';
 import { Sparkles, Image as ImageIcon, Type, Loader2, ArrowRight, Download, Move, Save, RotateCcw, Hand, ZoomIn, ZoomOut, Camera, X, CameraOff, RefreshCw } from 'lucide-react';
-import { createCharacterByFace, createCharacterByPrompt, API_BASE_URL } from '../services/api';
+import { createCharacterByFace, createCharacterByPrompt, FILE_BASE_URL } from '../services/api';
 import { CharacterResponse, BODY_TEMPLATES } from '../types';
 
 
@@ -38,7 +38,7 @@ export const CharacterCreator: React.FC = () => {
   const getFullUrl = (path: string) => {
     if (!path) return '';
     if (path.startsWith('http') || path.startsWith('data:')) return path;
-    return `${API_BASE_URL}${path}`;
+    return `${FILE_BASE_URL}${path}`;
   };
 
   // --- Camera Logic ---
