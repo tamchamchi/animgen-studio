@@ -1,8 +1,10 @@
-import { useState, useRef, SetStateAction } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { FileUpload } from './ui/FileUpload';
-import { Sparkles, Image as ImageIcon, Type, Loader2, ArrowRight, Download, Move, Save, RotateCcw, Hand, ZoomIn, ZoomOut } from 'lucide-react';
-import { createCharacterByFace, createCharacterByPrompt, FILE_BASE_URL } from '../services/api';
+import { Sparkles, Image as ImageIcon, Type, Loader2, ArrowRight, Download, Move, Save, RotateCcw, Hand, ZoomIn, ZoomOut, Camera, X, CameraOff, RefreshCw } from 'lucide-react';
+import { createCharacterByFace, createCharacterByPrompt, API_BASE_URL } from '../services/api';
 import { CharacterResponse, BODY_TEMPLATES } from '../types';
+
 
 export const CharacterCreator: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'face' | 'prompt'>('face');
@@ -15,6 +17,12 @@ export const CharacterCreator: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState('');
   const [selectedBodyId, setSelectedBodyId] = useState<string>('default');
+
+  // Camera State
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // Manual Adjustment State
   const [isAdjusting, setIsAdjusting] = useState(false);
@@ -30,8 +38,69 @@ export const CharacterCreator: React.FC = () => {
   const getFullUrl = (path: string) => {
     if (!path) return '';
     if (path.startsWith('http') || path.startsWith('data:')) return path;
-    return `${FILE_BASE_URL}${path}`;
+    return `${API_BASE_URL}${path}`;
   };
+
+  // --- Camera Logic ---
+  const startCamera = async () => {
+    setCameraLoading(true);
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        streamRef.current = stream;
+        setIsCameraOpen(true);
+      }
+    } catch (err: any) {
+      setError("Camera access denied or not available.");
+      console.error(err);
+    } finally {
+      setCameraLoading(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraOpen(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      // Mirror the capture to match the preview
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(videoRef.current, 0, 0);
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const capturedFile = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
+          setFile(capturedFile);
+          stopCamera();
+        }
+      }, 'image/jpeg', 0.95);
+    }
+  };
+
+  useEffect(() => {
+    return () => stopCamera(); // Cleanup on unmount
+  }, []);
+
+  // Switch tabs should stop camera
+  useEffect(() => {
+    stopCamera();
+  }, [activeTab]);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -43,13 +112,10 @@ export const CharacterCreator: React.FC = () => {
       let response;
       if (activeTab === 'face') {
         if (!file) {
-          throw new Error("Please upload a face image first.");
+          throw new Error("Please upload or capture a face image first.");
         }
 
-        // Get the selected body template
         const selectedTemplate = BODY_TEMPLATES.find(t => t.id === selectedBodyId) || BODY_TEMPLATES[0];
-
-        // Convert the imported image path to a Blob
         const bodyRes = await fetch(selectedTemplate.src);
         const bodyBlob = await bodyRes.blob();
 
@@ -61,7 +127,6 @@ export const CharacterCreator: React.FC = () => {
         response = await createCharacterByPrompt(prompt);
       }
       setResult(response);
-      // Reset adjustments defaults for new generation
       setFacePosition({ x: 0, y: 0, scale: 1 });
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
@@ -70,12 +135,10 @@ export const CharacterCreator: React.FC = () => {
     }
   };
 
-  // --- Adjustment Logic (Frontend Only) ---
-
+  // --- Adjustment Logic ---
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
-    // Calculate the offset between mouse and current image position
     setDragStart({
       x: e.clientX - facePosition.x,
       y: e.clientY - facePosition.y
@@ -85,8 +148,6 @@ export const CharacterCreator: React.FC = () => {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
     e.preventDefault();
-
-    // Update position based on mouse movement relative to start offset
     setFacePosition(prev => ({
       ...prev,
       x: e.clientX - dragStart.x,
@@ -108,50 +169,41 @@ export const CharacterCreator: React.FC = () => {
     setError(null);
 
     try {
-      // 1. Load the Body Image (High Res)
       const template = BODY_TEMPLATES.find(t => t.id === selectedBodyId) || BODY_TEMPLATES[0];
       const bodyImg = new Image();
       bodyImg.crossOrigin = "anonymous";
       bodyImg.src = template.src;
       await bodyImg.decode();
 
-      // 2. Load the Face Image
       const faceImg = new Image();
       faceImg.crossOrigin = "anonymous";
       faceImg.src = getFullUrl(result.face_url);
       await faceImg.decode();
 
-      // 3. Create Canvas matching Body dimensions
       const canvas = document.createElement('canvas');
       canvas.width = bodyImg.naturalWidth;
       canvas.height = bodyImg.naturalHeight;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error("Could not create canvas context");
 
-      // 4. Draw Body Base
       ctx.drawImage(bodyImg, 0, 0);
-
-      // 5. Calculate Coordinates Mapping
 
       const containerRect = imageContainerRef.current.getBoundingClientRect();
       const containerW = containerRect.width;
       const containerH = containerRect.height;
 
-      // Calculate how the body image is visually rendered (object-contain)
       const imgRatio = bodyImg.naturalWidth / bodyImg.naturalHeight;
       const containerRatio = containerW / containerH;
 
       let renderW, renderH, offsetLeft, offsetTop, scaleFactor;
 
       if (imgRatio < containerRatio) {
-        // Fits height (vertical fit)
         renderH = containerH;
         renderW = containerH * imgRatio;
         offsetLeft = (containerW - renderW) / 2;
         offsetTop = 0;
         scaleFactor = bodyImg.naturalHeight / renderH;
       } else {
-        // Fits width (horizontal fit)
         renderW = containerW;
         renderH = containerW / imgRatio;
         offsetLeft = 0;
@@ -159,42 +211,30 @@ export const CharacterCreator: React.FC = () => {
         scaleFactor = bodyImg.naturalWidth / renderW;
       }
 
-      // 6. Calculate Face Visual Position
-      // These must match the CSS styles exactly
-      const faceBaseW = 128; // CSS w-32 = 128px (approximate reference for calculation)
+      const faceBaseW = 128;
       const faceBaseH = faceImageRef.current.naturalHeight * (128 / faceImageRef.current.naturalWidth);
 
-      // Visual center relative to container
-      // CSS: left-1/2 (50%) - ml-[64px] (half width) -> creates center anchor
-      // Transform: translate(x, y)
       const visualCenterX = (containerW / 2) + facePosition.x;
-      const visualCenterY = 50 + (faceBaseH / 2) + facePosition.y; // Top fixed at 50px
+      const visualCenterY = 50 + (faceBaseH / 2) + facePosition.y;
 
-      // Target Dimensions (Scaled)
       const faceVisualW = faceBaseW * facePosition.scale;
       const faceVisualH = faceBaseH * facePosition.scale;
 
       const visualLeft = visualCenterX - (faceVisualW / 2);
       const visualTop = visualCenterY - (faceVisualH / 2);
 
-      // 7. Map to Canvas Coordinates
-      // Remove the "black bars" offset from object-contain
       const relativeLeft = visualLeft - offsetLeft;
       const relativeTop = visualTop - offsetTop;
 
-      // Scale up to natural resolution
       const canvasX = relativeLeft * scaleFactor;
       const canvasY = relativeTop * scaleFactor;
       const canvasW = faceVisualW * scaleFactor;
       const canvasH = faceVisualH * scaleFactor;
 
-      // 8. Draw Face on Canvas
       ctx.drawImage(faceImg, canvasX, canvasY, canvasW, canvasH);
 
-      // 9. Export Result
       const newImageUrl = canvas.toDataURL('image/png');
 
-      // Update local state with the new image
       setResult(prev => prev ? ({
         ...prev,
         image_url: newImageUrl
@@ -250,11 +290,41 @@ export const CharacterCreator: React.FC = () => {
               {activeTab === 'face' ? (
                 <div className="space-y-6">
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-300">1. Upload Face</label>
-                    <FileUpload
-                      label="Upload Face Image"
-                      onFileSelect={(f: SetStateAction<File | null>) => setFile(f)}
-                    />
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-sm font-medium text-slate-300">1. Face Image</label>
+                      <button
+                        onClick={isCameraOpen ? stopCamera : startCamera}
+                        disabled={cameraLoading}
+                        className={`flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded transition-colors ${isCameraOpen ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30'}`}
+                      >
+                        {cameraLoading ? <RefreshCw size={12} className="animate-spin" /> : (isCameraOpen ? <CameraOff size={12} /> : <Camera size={12} />)}
+                        {isCameraOpen ? 'Cancel' : 'Take Photo'}
+                      </button>
+                    </div>
+
+                    {isCameraOpen ? (
+                      <div className="relative rounded-xl overflow-hidden bg-black aspect-video border-2 border-indigo-500/50 group">
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          className="w-full h-full object-cover scale-x-[-1]"
+                        />
+                        <div className="absolute inset-x-0 bottom-4 flex justify-center px-4">
+                          <button
+                            onClick={capturePhoto}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg transform active:scale-90 transition-transform"
+                          >
+                            <Camera size={24} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <FileUpload
+                        label="Upload Face Image"
+                        onFileSelect={(f) => setFile(f)}
+                      />
+                    )}
                   </div>
 
                   <div className="space-y-3">
@@ -296,17 +366,18 @@ export const CharacterCreator: React.FC = () => {
               )}
 
               {error && (
-                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm flex items-center gap-2">
+                  <X size={16} className="shrink-0" />
                   {error}
                 </div>
               )}
 
               <button
                 onClick={handleGenerate}
-                disabled={loading || adjusting}
+                disabled={loading || adjusting || isCameraOpen}
                 className={`
                   w-full py-4 rounded-xl flex items-center justify-center gap-2 font-semibold text-lg transition-all
-                  ${loading
+                  ${(loading || isCameraOpen)
                     ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
                     : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40'}
                 `}
@@ -337,7 +408,6 @@ export const CharacterCreator: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Editor Canvas Area */}
                   <div
                     className="flex-1 relative bg-slate-950/50 overflow-hidden flex justify-center py-4 cursor-move"
                     ref={editorRef}
@@ -346,18 +416,14 @@ export const CharacterCreator: React.FC = () => {
                     onMouseLeave={handleMouseUp}
                   >
                     <div ref={imageContainerRef} className="relative h-[500px] w-full max-w-[400px]">
-                      {/* Background Body */}
                       <img
                         src={BODY_TEMPLATES.find(t => t.id === selectedBodyId)?.src || BODY_TEMPLATES[0].src}
                         className="w-full h-full object-contain pointer-events-none opacity-80"
                         alt="Body Template"
                       />
-                      {/* Face Overlay */}
                       <img
                         ref={faceImageRef}
                         src={getFullUrl(result.face_url)}
-                        // Visual Fix: left-1/2 centers start, -ml-[64px] centers element (half of w-32=128px)
-                        // Then transform translates relative to center
                         className={`absolute top-[50px] left-1/2 -ml-[64px] w-32 h-auto object-cover border-2 border-indigo-400/50 rounded-full shadow-xl transition-transform duration-75 
                                       ${isDragging ? 'cursor-grabbing scale-[1.02]' : 'cursor-grab'}
                                     `}
@@ -371,10 +437,8 @@ export const CharacterCreator: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Controls */}
                   <div className="p-4 bg-slate-800 border-t border-slate-700">
                     <div className="flex items-center gap-4">
-                      {/* Scale */}
                       <div className="flex-1 space-y-1">
                         <div className="flex justify-between text-xs font-medium text-slate-400">
                           <span>Scale</span>
@@ -398,8 +462,6 @@ export const CharacterCreator: React.FC = () => {
                         <button onClick={() => setFacePosition(p => ({ ...p, scale: Math.min(2, p.scale + 0.1) }))} className="p-2 bg-slate-700 rounded-full hover:bg-slate-600">
                           <ZoomIn size={16} />
                         </button>
-
-                        {/* Reset Button */}
                         <button
                           onClick={() => setFacePosition({ x: 0, y: 0, scale: 1 })}
                           className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 transition-colors ml-2"
