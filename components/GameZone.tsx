@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
-import { Terminal, RefreshCw, Maximize, Minimize, Lock } from 'lucide-react';
+import { Terminal, RefreshCw, Maximize, Minimize, Lock, Eye, EyeOff, Lightbulb, LightbulbOff } from 'lucide-react';
 import { getGameResources, FILE_BASE_URL } from '../services/api';
 import { BackgroundService } from './BackgroundService';
 import { DetectedObject as APIDetectedObject } from '../types';
@@ -27,11 +27,14 @@ const CONFIG = {
     GRAVITY: 0.5,
     SPEED: 5,
     JUMP_FORCE: -20,
-    CHAR_WIDTH: 60,     // Hitbox width
-    CHAR_HEIGHT: 80,    // Hitbox height
-    RENDER_SIZE: 120    // Visual size of the GIF
-};
 
+    CHAR_WIDTH: 60,
+    CHAR_HEIGHT: 100,
+
+    RENDER_SIZE: 256
+};
+const SPOTLIGHT_INNER_RADIUS = 20; // Bán kính vùng sáng đặc
+const SPOTLIGHT_OUTER_RADIUS = 140; // Bán kính vùng sáng mờ dần
 const FRAME_DELAY = 1000 / CONFIG.TARGET_FPS;
 
 // --- HOOK: Load Resources & Image Meta ---
@@ -128,6 +131,11 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
 
     const [isFocused, setIsFocused] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [showBackground, setShowBackground] = useState(true);
+
+    // Spotlight Effect State
+    const [spotlightActive, setSpotlightActive] = useState(false);
+    const spotlightActiveRef = useRef(false); // Ref for access inside requestAnimationFrame
 
     // --- GAME STATE ---
     const gameState = useRef({
@@ -145,6 +153,24 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
     const keys = useRef<Record<string, boolean>>({});
     const reqRef = useRef<number | undefined>(undefined);
     const lastTimeRef = useRef<number>(0);
+
+    const toggleSpotlight = () => {
+        const newState = !spotlightActive;
+        setSpotlightActive(newState);
+        spotlightActiveRef.current = newState;
+    };
+
+    // Modified to link background visibility with spotlight
+    const toggleBackground = () => {
+        const nextShowBg = !showBackground;
+        setShowBackground(nextShowBg);
+
+        // Auto-enable spotlight when hiding background (Dark Mode)
+        // Auto-disable spotlight when showing background
+        const shouldSpotlight = !nextShowBg;
+        setSpotlightActive(shouldSpotlight);
+        spotlightActiveRef.current = shouldSpotlight;
+    };
 
     // --- VIEW CALCULATION ---
     // Calculates the rendered dimensions of the background image (object-contain behavior)
@@ -307,11 +333,14 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
             // D. Render Updates
             const playerEl = document.getElementById('game-player');
             const playerImg = document.getElementById('game-player-img') as HTMLImageElement;
+            const bubbleEl = document.getElementById('game-bubble');
+            const spotlightEl = document.getElementById('game-spotlight');
 
+            const visualOffsetX = (CONFIG.CHAR_WIDTH - CONFIG.RENDER_SIZE) / 2;
+            const visualOffsetY = CONFIG.CHAR_HEIGHT - CONFIG.RENDER_SIZE;
+
+            // 1. Update Player
             if (playerEl && playerImg) {
-                const visualOffsetX = (CONFIG.CHAR_WIDTH - CONFIG.RENDER_SIZE) / 2;
-                const visualOffsetY = CONFIG.CHAR_HEIGHT - CONFIG.RENDER_SIZE;
-
                 // Important: Add view.offsetX/Y to align with center-positioned background
                 playerEl.style.transform = `translate(${player.x + visualOffsetX + view.offsetX}px, ${player.y + visualOffsetY + view.offsetY}px)`;
                 playerImg.style.transform = player.facingRight ? 'scaleX(1)' : 'scaleX(-1)';
@@ -326,6 +355,40 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                 if (playerImg.dataset.action !== player.state) {
                     if (src) playerImg.src = src;
                     playerImg.dataset.action = player.state;
+                }
+
+                // --- UPDATE BUBBLE VISIBILITY ---
+                if (bubbleEl) {
+                    if (player.state === 'speak') {
+                        bubbleEl.style.opacity = '1';
+                        // Keep scale animation but remove translation logic that conflicts with 'right' positioning
+                        bubbleEl.style.transform = 'scale(1)';
+                    } else {
+                        bubbleEl.style.opacity = '0';
+                        bubbleEl.style.transform = 'scale(0.5)';
+                    }
+                }
+            }
+
+            // 2. Update Spotlight
+            if (spotlightEl) {
+                if (spotlightActiveRef.current) {
+                    // Calculate visual center of the player
+                    const cx = player.x + visualOffsetX + view.offsetX + (CONFIG.RENDER_SIZE / 2);
+                    const cy = player.y + visualOffsetY + view.offsetY + (CONFIG.RENDER_SIZE / 1.5);
+
+                    spotlightEl.style.opacity = '1';
+                    // Radial gradient:
+                    // Transparent (background or dark container shows) -> White (spotlight center) -> Transparent (fade out to container background)
+                    // Hoặc, nếu muốn một vùng sáng trắng thuần túy:
+                    spotlightEl.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(255,255,255,1) 0px, rgba(255,255,255,1) ${SPOTLIGHT_INNER_RADIUS}px, transparent ${SPOTLIGHT_OUTER_RADIUS}px)`;
+                    // Nếu bạn muốn vùng ngoài vẫn là đen (khi background bị ẩn), bạn có thể dùng:
+                    // spotlightEl.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(255,255,255,1) 0px, rgba(255,255,255,1) 80px, rgba(0,0,0,0.98) 200px)`;
+                    // Tuy nhiên, việc này sẽ làm che đi background gốc khi nó được hiển thị.
+                    // Với `transparent 200px` thì khi `showBackground` là `true`, bạn sẽ thấy background gốc.
+                    // Khi `showBackground` là `false`, bạn sẽ thấy nền đen của container bên ngoài vùng sáng.
+                } else {
+                    spotlightEl.style.opacity = '0';
                 }
             }
         }
@@ -349,6 +412,15 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                 gameState.current.onGround = false;
                 gameState.current.state = 'jump';
             }
+
+            // DROP DOWN MECHANIC
+            if (e.key === 'ArrowDown' && gameState.current.onGround) {
+                // Push Y down by 30px to exceed the collision threshold (+25px)
+                // This causes the physics engine to not "snap" to the current line, effectively falling through.
+                gameState.current.y += 30;
+                gameState.current.onGround = false;
+            }
+
             if (e.key === 's' || e.key === 'S') gameState.current.state = 'speak';
             if (e.key === 'd' || e.key === 'D') gameState.current.state = 'dance';
             if (e.key === 'w' || e.key === 'W') gameState.current.state = 'wave';
@@ -371,7 +443,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
             window.removeEventListener('keyup', onKeyUp);
             if (reqRef.current) cancelAnimationFrame(reqRef.current);
         };
-    }, [bgMeta, isFocused, isFullscreen, view]); // Dependent on view to ensure bounds are correct
+    }, [bgMeta, isFocused, isFullscreen, view]);
 
     // --- OTHER HANDLERS ---
     const handleAnalysisComplete = (bgDataUrl: string, platforms: APIDetectedObject[]) => {
@@ -424,7 +496,27 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                                     {bgMeta ? `Res: ${bgMeta.width}x${bgMeta.height} | Scale: ${view.scale.toFixed(3)}` : 'Waiting for resources...'}
                                 </div>
                             </div>
-                            {loading && <RefreshCw className="animate-spin text-indigo-500" />}
+
+                            <div className="flex items-center gap-2">
+                                {/* Toggle Spotlight */}
+                                <button
+                                    onClick={toggleSpotlight}
+                                    className="p-2 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-yellow-400 border border-slate-600"
+                                    title={spotlightActive ? "Lights On" : "Lights Off"}
+                                >
+                                    {spotlightActive ? <LightbulbOff size={20} /> : <Lightbulb size={20} />}
+                                </button>
+
+                                {/* Toggle Background Visibility */}
+                                <button
+                                    onClick={toggleBackground}
+                                    className="p-2 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white border border-slate-600"
+                                    title={showBackground ? "Hide Background" : "Show Background"}
+                                >
+                                    {showBackground ? <Eye size={20} /> : <EyeOff size={20} />}
+                                </button>
+                                {loading && <RefreshCw className="animate-spin text-indigo-500" />}
+                            </div>
                         </div>
                     )}
 
@@ -452,8 +544,8 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                         {loading && <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900"><RefreshCw className="animate-spin text-indigo-500 w-8 h-8" /></div>}
                         {!isGameReady && !loading && <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 text-slate-400"><Lock className="w-10 h-10 mb-2" /><p>Complete Animation Step first</p></div>}
 
-                        {/* Background Image */}
-                        {data.bgUrl && (
+                        {/* Background Image - Toggles Visibility */}
+                        {data.bgUrl && showBackground && (
                             <img
                                 src={data.bgUrl}
                                 alt="Background"
@@ -462,9 +554,8 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                         )}
 
                         {/* SVG Layer for Polygons */}
-                        {/* We offset this group to match the object-contain image position */}
                         {bgMeta && (
-                            <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 opacity-70">
+                            <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
                                 <g transform={`translate(${view.offsetX}, ${view.offsetY})`}>
                                     {data.objects.map((obj, i) => {
                                         const pointsStr = obj.polygon
@@ -474,9 +565,10 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                                             <g key={i}>
                                                 <polygon
                                                     points={pointsStr}
-                                                    fill="rgba(34, 197, 94, 0.1)"
-                                                    stroke="rgba(34, 197, 94, 0.6)"
+                                                    fill="rgba(255, 255, 255, 0)"
+                                                    stroke={showBackground ? "rgba(39, 218, 16, 1)" : "rgba(255, 255, 255, 0)"}
                                                     strokeWidth="2"
+                                                    style={{ transition: 'stroke 0.3s ease' }}
                                                 />
                                             </g>
                                         )
@@ -485,8 +577,15 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                             </svg>
                         )}
 
+                        {/* --- SPOTLIGHT LAYER (z-15) --- */}
+                        {/* Sits between SVG (z-10) and Player (z-20) */}
+                        <div
+                            id="game-spotlight"
+                            className="absolute inset-0 z-15 pointer-events-none transition-opacity duration-200 opacity-0"
+                            style={{ willChange: 'background' }}
+                        ></div>
+
                         {/* Player Character Container */}
-                        {/* Position handled via absolute + CSS transform translate inside the loop */}
                         <div
                             id="game-player"
                             className="absolute z-20 will-change-transform top-0 left-0"
@@ -495,24 +594,45 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                                 height: CONFIG.RENDER_SIZE,
                             }}
                         >
+                            {/* --- SPEECH BUBBLE --- */}
+                            <div
+                                id="game-bubble"
+                                className="absolute opacity-0 transition-all duration-200 transform scale-75 origin-bottom-right"
+                                style={{
+                                    pointerEvents: 'none',
+                                    // DYNAMIC POSITIONING: Based on Character Hitbox Height
+                                    bottom: `${CONFIG.RENDER_SIZE / 2}px`,
+                                    right: `${CONFIG.CHAR_WIDTH / 2}px`
+                                }}
+                            >
+                                <div className="relative bg-white text-black px-4 py-2 rounded-2xl shadow-lg border-2 border-slate-200 min-w-[80px] text-center">
+                                    {/* Bubble Tail */}
+                                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-b-2 border-r-2 border-slate-200 rotate-45 transform"></div>
+
+                                    {/* Animated Dots */}
+                                    <div className="flex justify-center gap-1">
+                                        <span className="w-2 h-2 bg-slate-800 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                                        <span className="w-2 h-2 bg-slate-800 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                                        <span className="w-2 h-2 bg-slate-800 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <img
                                 id="game-player-img"
                                 src={data.actions['idle'] || ''}
                                 alt="Player"
-                                className="w-full h-full object-contain"
+                                className="w-full h-full object-contain object-bottom"
                                 style={{ imageRendering: 'pixelated' }}
                             />
-
-                            <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap backdrop-blur-sm border border-white/20">
-                                Player 1
-                            </div>
                         </div>
                     </div>
 
                     {!isFullscreen && (
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
                             <KbdKey label="Move" keys={['←', '→']} />
                             <KbdKey label="Jump" keys={['Space', '↑']} />
+                            <KbdKey label="Drop" keys={['↓']} />
                             <KbdKey label="Speak / Wave" keys={['S', 'W']} />
                             <KbdKey label="Dance" keys={['D']} />
                         </div>

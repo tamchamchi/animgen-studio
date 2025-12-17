@@ -10,8 +10,8 @@ import {
 } from '../types';
 
 // Configuration
-export const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
-export const FILE_BASE_URL = 'http://127.0.0.1:8000';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+export const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL;
 
 /**
  * Generic helper to handle fetch requests with Logging

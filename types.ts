@@ -4,7 +4,7 @@ import bodyOverallsBrown from './assets/3.png';
 import bodyDressPink from './assets/4.png';
 import bodyPrincess from './assets/10.png';
 import bodyAstronaut from './assets/8.png';
-import bodyOverallsDenim from './assets/6.png';
+import bodyManDan from './assets/man_dan.png';
 import bodyHero from './assets/7.png';
 import bodyStreetwear from './assets/9.png';
 
@@ -80,9 +80,9 @@ export const BODY_TEMPLATES = [
     src: bodyAstronaut
   },
   {
-    id: 'overalls_denim',
-    name: 'Denim Overall Dress',
-    src: bodyOverallsDenim
+    id: 'man_dan',
+    name: 'Mân Đàn',
+    src: bodyManDan
   },
   {
     id: 'hero',
@@ -96,7 +96,7 @@ export const BODY_TEMPLATES = [
   },
   {
     id: 'streetwear',
-    name: 'Boy Phố',
+    name: 'Phấn Bổ',
     src: bodyStreetwear
   },
 ];

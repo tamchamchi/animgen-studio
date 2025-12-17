@@ -287,7 +287,7 @@ export const AnimationStudio: React.FC<AnimationStudioProps> = ({ onSessionInit,
                                                                         isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-750'}
                                                         `}
                                                             >
-                                                                {isDone ? <Check size={14} /> : (isSelected && <Check size={14} className="mb-0.5" />)}
+                                                                {isDone ? <Check size={14} /> : isSelected}
                                                                 {action.toUpperCase().replace('_', ' ')}
                                                             </button>
                                                         )
@@ -306,7 +306,7 @@ export const AnimationStudio: React.FC<AnimationStudioProps> = ({ onSessionInit,
                                             disabled={selectedActions.length === 0 || selectedActions.every(a => step3Results.some(r => r.action === a))}
                                             className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                         >
-                                            <PlayCircle size={18} /> Render Selected
+                                            <PlayCircle size={18} /> GENERATE
                                         </button>
                                         {step3Results.length > 0 && (
                                             <button onClick={reset} className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium flex items-center justify-center gap-2">

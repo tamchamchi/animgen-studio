@@ -48,3 +48,8 @@ interface ImportMeta {
     url: string;
     readonly env: ImportMetaEnv;
 }
+
+interface ImportMeta {
+  url: string;
+  readonly env: ImportMetaEnv;
+}
