@@ -193,10 +193,18 @@ export const AnimationStudio: React.FC<AnimationStudioProps> = ({ onSessionInit,
                         {/* Step 0: Init */}
                         {currentStep === 0 && (
                             <div className="space-y-6 text-center max-w-md mx-auto w-full my-auto">
-                                <h3 className="text-xl font-bold text-white">Initialize Session</h3>
+                                <div className="space-y-2">
+                                    <h3 className="text-xl font-bold text-white">Character Initialization</h3>
+                                    <p className="text-slate-400 text-sm">Upload your character image to begin the rigging process.</p>
+                                </div>
                                 <FileUpload onFileSelect={setInitFile} />
-                                <button onClick={handleInit} disabled={!initFile || loading} className="btn-primary w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">
-                                    {loading ? <Loader2 className="animate-spin" /> : <ArrowRight />} Start Session
+                                <button 
+                                    onClick={handleInit} 
+                                    disabled={!initFile || loading}
+                                    className="w-full py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
+                                >
+                                    {loading ? <Loader2 className="animate-spin" /> : <ArrowRight />}
+                                    Initialize Character
                                 </button>
                             </div>
                         )}

@@ -18,7 +18,7 @@ export const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
     {
       icon: <Clapperboard className="text-indigo-400" size={20} />,
       title: "2. Animation Studio",
-      description: "Render all essential actions: standing, running, jumping, waving, and dancing to fully enable GameZone gameplay."
+      description: "Render all essential actions: standing, running, jumping, speaking ,waving, and dancing to fully enable GameZone gameplay."
     },
     {
       icon: <Gamepad2 className="text-indigo-400" size={20} />,

@@ -1,12 +1,16 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { FileUpload } from './ui/FileUpload';
-import { Sparkles, Image as ImageIcon, Type, Loader2, ArrowRight, Download, Move, Save, RotateCcw, Hand, ZoomIn, ZoomOut, Camera, X, CameraOff, RefreshCw } from 'lucide-react';
-import { createCharacterByFace, createCharacterByPrompt, FILE_BASE_URL } from '../services/api';
+import { Sparkles, Image as ImageIcon, Type, Loader2, Download, Move, Save, RotateCcw, Hand, ZoomIn, ZoomOut, Camera, X, RefreshCw, CheckCircle2, Trash2 } from 'lucide-react';
+import { createCharacterByFace, createCharacterByPrompt, API_BASE_URL } from '../services/api';
 import { CharacterResponse, BODY_TEMPLATES } from '../types';
+import { CameraModal } from './ui/CameraModal';
 
+interface CharacterCreatorProps {
+  onGenerated?: () => void;
+}
 
-export const CharacterCreator: React.FC = () => {
+export const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onGenerated }) => {
   const [activeTab, setActiveTab] = useState<'face' | 'prompt'>('face');
   const [loading, setLoading] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
@@ -15,14 +19,12 @@ export const CharacterCreator: React.FC = () => {
 
   // Inputs
   const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [selectedBodyId, setSelectedBodyId] = useState<string>('default');
 
-  // Camera State
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [cameraLoading, setCameraLoading] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  // Camera Modal State
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
 
   // Manual Adjustment State
   const [isAdjusting, setIsAdjusting] = useState(false);
@@ -35,72 +37,21 @@ export const CharacterCreator: React.FC = () => {
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const faceImageRef = useRef<HTMLImageElement>(null);
 
+  useEffect(() => {
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setPreviewUrl(null);
+    }
+  }, [file]);
+
   const getFullUrl = (path: string) => {
     if (!path) return '';
     if (path.startsWith('http') || path.startsWith('data:')) return path;
-    return `${FILE_BASE_URL}${path}`;
+    return `${API_BASE_URL}${path}`;
   };
-
-  // --- Camera Logic ---
-  const startCamera = async () => {
-    setCameraLoading(true);
-    setError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        setIsCameraOpen(true);
-      }
-    } catch (err: any) {
-      setError("Camera access denied or not available.");
-      console.error(err);
-    } finally {
-      setCameraLoading(false);
-    }
-  };
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    setIsCameraOpen(false);
-  };
-
-  const capturePhoto = () => {
-    if (!videoRef.current) return;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      // Mirror the capture to match the preview
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(videoRef.current, 0, 0);
-
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const capturedFile = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
-          setFile(capturedFile);
-          stopCamera();
-        }
-      }, 'image/jpeg', 0.95);
-    }
-  };
-
-  useEffect(() => {
-    return () => stopCamera(); // Cleanup on unmount
-  }, []);
-
-  // Switch tabs should stop camera
-  useEffect(() => {
-    stopCamera();
-  }, [activeTab]);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -128,11 +79,17 @@ export const CharacterCreator: React.FC = () => {
       }
       setResult(response);
       setFacePosition({ x: 0, y: 0, scale: 1 });
+      if (onGenerated) onGenerated();
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRemoveFile = () => {
+    setFile(null);
+    setError(null);
   };
 
   // --- Adjustment Logic ---
@@ -289,41 +246,67 @@ export const CharacterCreator: React.FC = () => {
             <div className="space-y-6">
               {activeTab === 'face' ? (
                 <div className="space-y-6">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="block text-sm font-medium text-slate-300">1. Face Image</label>
-                      <button
-                        onClick={isCameraOpen ? stopCamera : startCamera}
-                        disabled={cameraLoading}
-                        className={`flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded transition-colors ${isCameraOpen ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30'}`}
-                      >
-                        {cameraLoading ? <RefreshCw size={12} className="animate-spin" /> : (isCameraOpen ? <CameraOff size={12} /> : <Camera size={12} />)}
-                        {isCameraOpen ? 'Cancel' : 'Take Photo'}
-                      </button>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <label className="block text-sm font-medium text-slate-300">1. Face Source</label>
+                      {file && (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/30 rounded-full">
+                          <CheckCircle2 size={12} className="text-green-400 animate-pulse" />
+                          <span className="text-[10px] font-bold text-green-400 uppercase tracking-wider">Face Loaded</span>
+                        </div>
+                      )}
                     </div>
 
-                    {isCameraOpen ? (
-                      <div className="relative rounded-xl overflow-hidden bg-black aspect-video border-2 border-indigo-500/50 group">
-                        <video
-                          ref={videoRef}
-                          autoPlay
-                          playsInline
-                          className="w-full h-full object-cover scale-x-[-1]"
-                        />
-                        <div className="absolute inset-x-0 bottom-4 flex justify-center px-4">
-                          <button
-                            onClick={capturePhoto}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg transform active:scale-90 transition-transform"
-                          >
-                            <Camera size={24} />
-                          </button>
+                    {previewUrl ? (
+                      <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-4 flex items-center gap-4 animate-in fade-in slide-in-from-left-4">
+                        <div className="relative w-20 h-20 shrink-0">
+                          <img
+                            src={previewUrl}
+                            className="w-full h-full object-cover rounded-xl border-2 border-indigo-500 shadow-lg shadow-indigo-500/20"
+                            alt="Face Preview"
+                          />
+                          <div className="absolute -top-1 -right-1 bg-indigo-500 rounded-full p-1 shadow-md">
+                            <ImageIcon size={10} className="text-white" />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-bold text-sm truncate">{file?.name}</p>
+                          <p className="text-slate-500 text-xs">Source file ready for rigging</p>
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={() => setIsCameraModalOpen(true)}
+                              className="text-[10px] font-bold text-indigo-400 hover:text-white transition-colors flex items-center gap-1"
+                            >
+                              <RefreshCw size={12} /> Replace
+                            </button>
+                            <button
+                              onClick={handleRemoveFile}
+                              className="text-[10px] font-bold text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
+                            >
+                              <Trash2 size={12} /> Remove
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ) : (
-                      <FileUpload
-                        label="Upload Face Image"
-                        onFileSelect={(f) => setFile(f)}
-                      />
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            onClick={() => setIsCameraModalOpen(true)}
+                            className="flex flex-col items-center justify-center gap-2 p-6 rounded-2xl bg-indigo-600/10 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-all group"
+                          >
+                            <Camera size={24} className="group-hover:scale-110 transition-transform" />
+                            <span className="text-xs font-bold uppercase tracking-wider">Use Camera</span>
+                          </button>
+                          <div className="relative">
+                            <FileUpload
+                              label="Browse Files"
+                              onFileSelect={(f) => setFile(f)}
+                            />
+                          </div>
+                        </div>
+                        <p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Choose a capture method</p>
+                      </div>
                     )}
                   </div>
 
@@ -374,12 +357,12 @@ export const CharacterCreator: React.FC = () => {
 
               <button
                 onClick={handleGenerate}
-                disabled={loading || adjusting || isCameraOpen}
+                disabled={loading || adjusting || (activeTab === 'face' && !file) || (activeTab === 'prompt' && !prompt.trim())}
                 className={`
                   w-full py-4 rounded-xl flex items-center justify-center gap-2 font-semibold text-lg transition-all
-                  ${(loading || isCameraOpen)
+                  ${loading
                     ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40'}
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40 disabled:opacity-50 disabled:cursor-not-allowed'}
                 `}
               >
                 {loading ? <Loader2 className="animate-spin" /> : <Sparkles />}
@@ -494,57 +477,45 @@ export const CharacterCreator: React.FC = () => {
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
-                        {result.face_url && (
-                          <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 flex gap-4 items-center">
-                            <img
-                              src={getFullUrl(result.face_url)}
-                              alt="Face Region"
-                              className="w-12 h-12 rounded bg-black object-cover"
-                            />
-                            <div>
-                              <p className="text-xs text-slate-400 uppercase font-semibold">Face</p>
-                              <p className="text-xs text-slate-500">Source</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {result.face_url && activeTab === 'face' && (
-                          <button
-                            onClick={() => setIsAdjusting(true)}
-                            className="bg-slate-800 hover:bg-slate-700 p-3 rounded-lg border border-slate-700 flex gap-3 items-center transition-colors text-left"
-                          >
-                            <div className="bg-indigo-500/20 p-2 rounded text-indigo-400">
-                              <Move size={16} />
-                            </div>
-                            <div>
-                              <p className="text-xs text-slate-300 uppercase font-semibold">Misaligned?</p>
-                              <p className="text-xs text-indigo-400">Adjust Position</p>
-                            </div>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="text-center mt-auto">
-                        <div className="inline-block px-3 py-1 bg-green-500/20 text-green-400 text-xs rounded-full font-mono">
-                          ID: {result.id.slice(0, 8)}...
-                        </div>
+                        <button
+                          onClick={() => setIsAdjusting(true)}
+                          className="flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-bold border border-slate-700 transition-all active:scale-95"
+                        >
+                          <Move size={16} />
+                          Adjust Position
+                        </button>
+                        <button
+                          onClick={() => setResult(null)}
+                          className="flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-red-900/40 text-slate-400 hover:text-red-400 rounded-lg text-sm font-bold border border-slate-700 hover:border-red-900/50 transition-all active:scale-95"
+                        >
+                          <X size={16} />
+                          Clear
+                        </button>
                       </div>
                     </div>
                   ) : (
-                    <div className="text-center text-slate-600 p-8">
-                      <div className="w-16 h-16 border-2 border-slate-700 rounded-full flex items-center justify-center mx-auto mb-4 border-dashed">
-                        <ArrowRight className="text-slate-600" />
+                    <div className="text-center p-8 space-y-4">
+                      <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto border-2 border-dashed border-slate-700">
+                        <ImageIcon size={32} className="text-slate-600" />
                       </div>
-                      <p>Generated result will appear here</p>
+                      <div className="space-y-1">
+                        <p className="text-white font-medium">Ready to Visualize</p>
+                        <p className="text-slate-500 text-sm">Upload a face or type a prompt to see your character here.</p>
+                      </div>
                     </div>
                   )}
                 </div>
               )}
             </div>
-
           </div>
         </div>
       </div>
+
+      <CameraModal
+        isOpen={isCameraModalOpen}
+        onClose={() => setIsCameraModalOpen(false)}
+        onCapture={(capturedFile) => setFile(capturedFile)}
+      />
     </div>
   );
 };
