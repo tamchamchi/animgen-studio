@@ -44,21 +44,46 @@ export const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCap
     };
 
     const handleCapture = () => {
-        if (!videoRef.current) return;
+        const video = videoRef.current;
+        if (!video || !video.videoWidth) return;
+
+        // Define the crop area based on the UI guide (w-64 h-80 = 256px x 320px)
+        const guideWidth = 256;
+        const guideHeight = 320;
+
+        // The video is contained in an aspect-video box. 
+        // We need to calculate the scale between the displayed pixels and the raw video resolution.
+        const displayWidth = video.clientWidth;
+
+        const scale = video.videoWidth / displayWidth;
+
+        // Actual source dimensions to crop
+        const sWidth = guideWidth * scale;
+        const sHeight = guideHeight * scale;
+        const sx = (video.videoWidth - sWidth) / 2;
+        const sy = (video.videoHeight - sHeight) / 2;
 
         const canvas = document.createElement('canvas');
-        canvas.width = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
+        // Final output resolution (maintaining the 4:5 aspect ratio of the guide)
+        canvas.width = 512;
+        canvas.height = 640;
+
         const ctx = canvas.getContext('2d');
         if (ctx) {
-            // Mirror the capture to match the preview
+            // Mirror the capture horizontally since the preview is mirrored
             ctx.translate(canvas.width, 0);
             ctx.scale(-1, 1);
-            ctx.drawImage(videoRef.current, 0, 0);
+
+            // Draw only the cropped section
+            ctx.drawImage(
+                video,
+                sx, sy, sWidth, sHeight, // Source rectangle
+                0, 0, canvas.width, canvas.height // Destination rectangle
+            );
 
             canvas.toBlob((blob) => {
                 if (blob) {
-                    const capturedFile = new File([blob], `face_capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
+                    const capturedFile = new File([blob], `face_crop_${Date.now()}.jpg`, { type: 'image/jpeg' });
                     onCapture(capturedFile);
                     handleClose();
                 }
@@ -128,7 +153,9 @@ export const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCap
                             {!loading && (
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                     <div className="w-64 h-80 border-2 border-dashed border-white/20 rounded-[100px] shadow-[0_0_0_1000px_rgba(0,0,0,0.4)]" />
-                                    <p className="absolute bottom-6 text-white/60 text-[10px] font-bold uppercase tracking-widest">Center your face in the guide</p>
+                                    <div className="absolute bottom-6 bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10">
+                                        <p className="text-white text-[10px] font-bold uppercase tracking-widest">Center your face in the oval</p>
+                                    </div>
                                 </div>
                             )}
                         </>
@@ -144,7 +171,7 @@ export const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCap
                         <div className="w-12 h-12 border-2 border-slate-900 rounded-full flex items-center justify-center">
                             <div className="w-8 h-8 bg-slate-900 rounded-full scale-100 group-hover:scale-90 transition-transform" />
                         </div>
-                        <span className="absolute -bottom-10 whitespace-nowrap text-[10px] font-bold text-white uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">Capture Photo</span>
+                        <span className="absolute -bottom-10 whitespace-nowrap text-[10px] font-bold text-white uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">Capture Face Only</span>
                     </button>
                 </div>
             </div>

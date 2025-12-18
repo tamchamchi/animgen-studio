@@ -10,74 +10,52 @@ import {
 } from '../types';
 
 // Configuration
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-export const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL;
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+export const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL || 'http://127.0.0.1:8000';
+const ENABLE_LOGS = import.meta.env.VITE_ENABLE_API_LOG === 'true';
 
 /**
- * Generic helper to handle fetch requests with Logging
+ * Generic helper to handle fetch requests
  */
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
-
-  // --- LOG REQUEST ---
-  // Sử dụng groupCollapsed để console gọn gàng, bấm vào mới mở ra chi tiết
-  console.groupCollapsed(`🚀 API Request: [${options.method || 'GET'}] ${endpoint}`);
-  console.log('🔗 URL:', url);
-
-  // Log body đặc biệt xử lý cho FormData để nhìn thấy nội dung file/text
-  if (options.body instanceof FormData) {
-    console.log('📂 Body (FormData):');
-    options.body.forEach((value, key) => {
-      // Nếu là File thì log tên và type, nếu là string thì log giá trị
-      if (value instanceof File) {
-        console.log(`   - ${key}: File(name="${value.name}", type="${value.type}", size=${value.size})`);
-      } else {
-        console.log(`   - ${key}: "${value}"`);
-      }
-    });
-  } else if (options.body) {
-    console.log('📦 Body:', options.body);
+  if (ENABLE_LOGS) {
+    console.group(`[API Request] ${endpoint}`);
+    console.debug('Options:', options);
+    console.groupEnd();
   }
 
-  try {
-    const response = await fetch(url, options);
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
 
-    // --- LOG RESPONSE ERROR ---
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`❌ API Error ${response.status}:`, errorBody);
-      console.groupEnd(); // Đóng group log
-
-      // Try to parse error as JSON if possible, otherwise use text
-      try {
-        const errorJson = JSON.parse(errorBody);
-        throw new Error(errorJson.detail || `API Error ${response.status}`);
-      } catch (e) {
-        throw new Error(errorBody || `API Error ${response.status}: ${response.statusText}`);
-      }
+  if (!response.ok) {
+    const errorBody = await response.text();
+    if (ENABLE_LOGS) {
+      console.error(`[API Error] ${endpoint}`, { status: response.status, body: errorBody });
     }
-
-    const data = await response.json() as T;
-
-    // --- LOG RESPONSE SUCCESS ---
-    console.log(`✅ Status: ${response.status}`);
-    console.log('DATA:', data);
-    console.groupEnd(); // Đóng group log
-
-    return data;
-
-  } catch (error) {
-    // --- LOG NETWORK ERROR ---
-    console.error('💥 Network/Parsing Error:', error);
-    console.groupEnd(); // Đóng group log
-    throw error;
+    // Try to parse error as JSON if possible, otherwise use text
+    try {
+      const errorJson = JSON.parse(errorBody);
+      throw new Error(errorJson.detail || `API Error ${response.status}`);
+    } catch (e) {
+      throw new Error(errorBody || `API Error ${response.status}: ${response.statusText}`);
+    }
   }
+
+  const data = await response.json() as T;
+
+  if (ENABLE_LOGS) {
+    console.group(`[API Success] ${endpoint}`);
+    console.debug('Response:', data);
+    console.groupEnd();
+  }
+
+  return data;
 }
 
 // --- Character Services ---
 
 export const createCharacterByFace = async (file: File, bodyFile: Blob): Promise<CharacterResponse> => {
   const formData = new FormData();
+  // Backend expects 'face_image' and 'body_image' based on the error message
   formData.append('face_image', file);
   formData.append('body_image', bodyFile);
 
@@ -96,26 +74,6 @@ export const createCharacterByPrompt = async (prompt: string): Promise<Character
     body: formData,
   });
 };
-
-export const adjustCharacter = async (
-  faceFile: File,
-  bodyFile: Blob,
-  params: { anchorX: number; anchorY: number; scaleW: number; scaleH: number }
-): Promise<CharacterResponse> => {
-  const formData = new FormData();
-  formData.append('face_image', faceFile);
-  formData.append('body_image', bodyFile);
-  formData.append('anchor_x', Math.round(params.anchorX).toString());
-  formData.append('anchor_y', Math.round(params.anchorY).toString());
-  formData.append('scale_w', Math.round(params.scaleW).toString());
-  formData.append('scale_h', Math.round(params.scaleH).toString());
-
-  return request<CharacterResponse>(`/character/adjust`, {
-    method: 'POST',
-    body: formData,
-  });
-};
-
 
 // --- Animation Services ---
 
@@ -154,8 +112,6 @@ export const getGameResources = async (gameId: string): Promise<GameResourcesRes
     method: 'POST',
   });
 };
-
-// --- Background Services ---
 
 export const analyzeBackgroundModel = async (
   animId: string,

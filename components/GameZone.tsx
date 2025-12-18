@@ -566,7 +566,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                                                 <polygon
                                                     points={pointsStr}
                                                     fill="rgba(255, 255, 255, 0)"
-                                                    stroke={showBackground ? "rgba(39, 218, 16, 1)" : "rgba(255, 255, 255, 0)"}
+                                                    stroke={showBackground ? "rgba(255, 255, 255, 0)" : "rgba(255, 255, 255, 0)"}
                                                     strokeWidth="2"
                                                     style={{ transition: 'stroke 0.3s ease' }}
                                                 />
