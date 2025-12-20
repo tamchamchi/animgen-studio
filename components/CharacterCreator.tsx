@@ -1,7 +1,23 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { FileUpload } from './ui/FileUpload';
-import { Sparkles, Image as ImageIcon, Type, Loader2, Download, Move, Save, RotateCcw, Hand, ZoomIn, ZoomOut, Camera, X, RefreshCw, CheckCircle2, Trash2 } from 'lucide-react';
+import {
+  Sparkles,
+  Image as ImageIcon,
+  Type,
+  Loader2,
+  Download,
+  Move,
+  Save,
+  RotateCcw,
+  Hand,
+  ZoomIn,
+  ZoomOut,
+  Camera,
+  X,
+  RefreshCw,
+  CheckCircle2,
+  Trash2
+} from 'lucide-react';
 import { createCharacterByFace, createCharacterByPrompt, API_BASE_URL } from '../services/api';
 import { CharacterResponse, BODY_TEMPLATES } from '../types';
 import { CameraModal } from './ui/CameraModal';
@@ -465,31 +481,41 @@ export const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onGenerated 
                           alt="Generated Character"
                           className="w-full h-auto rounded-lg shadow-2xl border border-slate-700"
                         />
+                      </div>
+
+                      {/* Control Panel: Adjust, Clear, Download in one row */}
+                      <div className={`grid gap-3 ${result.face_url ? 'grid-cols-3' : 'grid-cols-2'}`}>
+
+                        {/* Adjust: Only for Face */}
+                        {result.face_url && (
+                          <button
+                            onClick={() => setIsAdjusting(true)}
+                            className="flex items-center justify-center gap-2 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-bold border border-slate-700 transition-all active:scale-95"
+                          >
+                            <Move size={18} />
+                            <span className="hidden sm:inline">Adjust Face</span>
+                          </button>
+                        )}
+
+                        {/* Clear: Always visible */}
+                        <button
+                          onClick={() => setResult(null)}
+                          className="flex items-center justify-center gap-2 py-2.5 bg-slate-800 hover:bg-red-900/40 text-slate-400 hover:text-red-400 rounded-lg text-sm font-bold border border-slate-700 hover:border-red-900/50 transition-all active:scale-95"
+                        >
+                          <X size={18} />
+                          <span>Clear</span>
+                        </button>
+
+                        {/* Download: Always visible and prominently lit */}
                         <a
                           href={getFullUrl(result.image_url)}
                           download
                           target="_blank"
-                          className="absolute bottom-2 right-2 p-2 bg-black/60 hover:bg-black/80 rounded-full text-white opacity-0 group-hover/image:opacity-100 transition-opacity"
+                          className="flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
                         >
-                          <Download size={16} />
+                          <Download size={18} />
+                          <span>Download</span>
                         </a>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          onClick={() => setIsAdjusting(true)}
-                          className="flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-bold border border-slate-700 transition-all active:scale-95"
-                        >
-                          <Move size={16} />
-                          Adjust Position
-                        </button>
-                        <button
-                          onClick={() => setResult(null)}
-                          className="flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-red-900/40 text-slate-400 hover:text-red-400 rounded-lg text-sm font-bold border border-slate-700 hover:border-red-900/50 transition-all active:scale-95"
-                        >
-                          <X size={16} />
-                          Clear
-                        </button>
                       </div>
                     </div>
                   ) : (
@@ -499,7 +525,6 @@ export const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onGenerated 
                       </div>
                       <div className="space-y-1">
                         <p className="text-white font-medium">Ready to Visualize</p>
-                        <p className="text-slate-500 text-sm">Upload a face or type a prompt to see your character here.</p>
                       </div>
                     </div>
                   )}
