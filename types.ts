@@ -7,6 +7,10 @@ import bodyAstronaut from './assets/8.png';
 import bodyManDan from './assets/man_dan.png';
 import bodyHero from './assets/7.png';
 import bodyStreetwear from './assets/9.png';
+import magicalGirl from './assets/magical_girl.png'
+import cuteKid from './assets/kid.png'
+import MU from './assets/mu.png'
+import Char1 from './assets/char1.png'
 
 // Common Types
 
@@ -110,5 +114,12 @@ export interface GameResourcesResponse {
   background_url?: string;
   detected_objects?: DetectedObject[];
   action_gif_urls?: string[]; // Changed from single url to list of strings
-  [key: string]: any; 
+  [key: string]: any;
 }
+
+export const CHARACTER_TEMPLATES = [
+  { id: 'tpl1', name: 'Heroic Knight', url: Char1 },
+  { id: 'tpl2', name: 'Cyber Ninja', url: MU },
+  { id: 'tpl3', name: 'Magical Girl', url: magicalGirl },
+  { id: 'tpl4', name: 'Cute Kid', url: cuteKid },
+]
