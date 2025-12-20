@@ -144,8 +144,7 @@ export const AnimationStudio: React.FC<AnimationStudioProps> = ({ onSessionInit,
             {/* Header Area */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-3xl font-bold text-white tracking-tight">Animation Studio</h2>
-                    <p className="text-slate-400">Bring your static characters to life with Generative AI.</p>
+                    <h2 className="text-3xl font-bold text-white tracking-tight">Animate your character</h2>
                 </div>
                 {animId && (
                     <div className="hidden sm:flex items-center gap-2 bg-slate-800/80 px-4 py-2 rounded-full text-xs font-mono text-indigo-400 border border-slate-700">
@@ -164,7 +163,6 @@ export const AnimationStudio: React.FC<AnimationStudioProps> = ({ onSessionInit,
                             <div className="space-y-8 text-center max-w-md mx-auto w-full animate-in fade-in duration-500">
                                 <div className="space-y-2">
                                     <h3 className="text-2xl font-bold text-white">Character Initialization</h3>
-                                    <p className="text-slate-400 text-sm">Upload an image or pick a template to begin</p>
                                 </div>
 
                                 {!loading ? (

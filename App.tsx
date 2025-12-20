@@ -8,7 +8,7 @@ import { GuideModal } from './components/ui/GuideModal';
 function App() {
   const [activeModule, setActiveModule] = useState<'character' | 'animation' | 'game'>('character');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showGuide, setShowGuide] = useState(false);
+  const [showGuide, setShowGuide] = useState(true);
 
   // State shared between modules
   const [sessionId, setSessionId] = useState<string | null>(null);
