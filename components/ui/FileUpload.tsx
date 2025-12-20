@@ -92,7 +92,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             </div>
             <div>
               <p className="font-medium text-white">{label}</p>
-              <p className="text-xs text-slate-400 mt-1">Drag & drop or click to browse</p>
+              <p className="text-xs text-slate-400 mt-1">Drag & drop or click</p>
             </div>
           </>
         )}

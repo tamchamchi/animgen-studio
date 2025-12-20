@@ -485,12 +485,18 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
     return (
         <div className="max-w-6xl mx-auto space-y-6">
             <div className="grid lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1 h-full">
+                    <BackgroundService
+                        sessionId={sessionId}
+                        onAnalysisComplete={handleAnalysisComplete}
+                    />
+                </div>
                 <div className="lg:col-span-2 space-y-4">
                     {!isFullscreen && (
                         <div className="flex justify-between items-end bg-slate-800/50 p-4 rounded-xl border border-slate-700">
                             <div>
                                 <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                                    <Terminal className="text-green-400" /> Game Controller
+                                    <Terminal className="text-green-400" /> Game Screen
                                 </h2>
                                 <div className="text-xs text-slate-400 font-mono mt-1">
                                     {bgMeta ? `Res: ${bgMeta.width}x${bgMeta.height} | Scale: ${view.scale.toFixed(3)}` : 'Waiting for resources...'}
@@ -639,12 +645,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                     )}
                 </div>
 
-                <div className="lg:col-span-1 h-full">
-                    <BackgroundService
-                        sessionId={sessionId}
-                        onAnalysisComplete={handleAnalysisComplete}
-                    />
-                </div>
             </div>
         </div>
     );

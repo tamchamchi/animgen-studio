@@ -136,7 +136,7 @@ function App() {
 
       {/* Footer Info */}
       <footer className="max-w-7xl mx-auto px-4 py-8 border-t border-slate-900 text-center">
-        <p className="text-slate-600 text-xs">AnimGen.io © 2024 • Powered by Advanced AI Character Pipelines</p>
+        <p className="text-slate-600 text-xs">AnimGen.io © 2025 • Powered by MMLab</p>
       </footer>
     </div>
   );

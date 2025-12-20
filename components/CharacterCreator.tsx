@@ -224,7 +224,7 @@ export const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onGenerated 
                 : 'text-slate-400 hover:text-white hover:bg-slate-700/30'}`}
           >
             <ImageIcon size={18} />
-            From Face
+            From Your Face
           </button>
           <button
             onClick={() => { setActiveTab('prompt'); setError(null); }}
@@ -300,18 +300,17 @@ export const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onGenerated 
                           </button>
                           <div className="relative">
                             <FileUpload
-                              label="Browse Files"
+                              label=""
                               onFileSelect={(f) => setFile(f)}
                             />
                           </div>
                         </div>
-                        <p className="text-center text-[10px] text-slate-500 uppercase tracking-widest">Choose a capture method</p>
                       </div>
                     )}
                   </div>
 
                   <div className="space-y-3">
-                    <label className="block text-sm font-medium text-slate-300">2. Select Body Template</label>
+                    <label className="block text-sm font-medium text-slate-300">2. Select Body</label>
                     <div className="grid grid-cols-3 gap-3">
                       {BODY_TEMPLATES.map(tpl => (
                         <button
@@ -338,7 +337,7 @@ export const CharacterCreator: React.FC<CharacterCreatorProps> = ({ onGenerated 
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <label className="block text-sm font-medium text-slate-300">Description Prompt</label>
+                  <label className="block text-sm font-medium text-slate-300">Prompt</label>
                   <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}

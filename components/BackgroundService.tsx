@@ -113,8 +113,7 @@ export const BackgroundService: React.FC<BackgroundServiceProps> = ({ sessionId,
                     <Layers className="text-indigo-400" size={20} />
                 </div>
                 <div>
-                    <h3 className="text-lg font-bold text-white">Level Creator</h3>
-                    <p className="text-xs text-slate-400">Auto-generate platforms</p>
+                    <h3 className="text-lg font-bold text-white">Map Creator</h3>
                 </div>
             </div>
 
@@ -161,7 +160,7 @@ export const BackgroundService: React.FC<BackgroundServiceProps> = ({ sessionId,
                 ) : (
                     <div className="text-center text-slate-600">
                         <Settings2 className="mx-auto mb-2 opacity-30" size={32} />
-                        <p className="text-sm">Configure background settings</p>
+                        <p className="text-sm">Map settings</p>
                     </div>
                 )}
             </div>
