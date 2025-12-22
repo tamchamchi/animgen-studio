@@ -1,12 +1,13 @@
-import bodyCasualRed from './assets/1.png';
+import bodyBrownPolo from './assets/15.png';
 import bodyRaincoat from './assets/2.png';
-import bodyOverallsBrown from './assets/3.png';
-import bodyDressPink from './assets/4.png';
+import bodyOrangeShirt from './assets/13.png';
+import bodyDressPink from './assets/14.png';
 import bodyPrincess from './assets/10.png';
 import bodyAstronaut from './assets/8.png';
 import bodyManDan from './assets/man_dan.png';
 import bodyHero from './assets/7.png';
 import bodyStreetwear from './assets/9.png';
+
 import magicalGirl from './assets/magical_girl.png'
 import cuteKid from './assets/kid.png'
 import MU from './assets/mu.png'
@@ -54,19 +55,21 @@ export enum AnimationAction {
   JUMP = 'jumping',
   DANCE = 'jesse_dancing',
   WAVE = 'waving',
-  SPEAK = 'speaking'
+  SPEAK = 'speaking',
+  RUSSIAN_DANCE = "russian_dancing",
+  CR7_SIUU = "cr7_siuu"
 }
 
 export const BODY_TEMPLATES = [
   {
-    id: 'casual_red',
-    name: 'Red Sweater',
-    src: bodyCasualRed
+    id: 'brown_polo',
+    name: 'Brown Polo',
+    src: bodyBrownPolo
   },
   {
-    id: 'overalls_brown',
-    name: 'Brown Overalls',
-    src: bodyOverallsBrown
+    id: 'orange_shirt',
+    name: 'Orange Shirt',
+    src: bodyOrangeShirt
   },
   {
     id: 'dress_pink',

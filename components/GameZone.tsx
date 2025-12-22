@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
-import { Terminal, RefreshCw, Maximize, Minimize, Lock, Eye, EyeOff, Lightbulb, LightbulbOff } from 'lucide-react';
+import { Terminal, RefreshCw, Maximize, Minimize, Lock, Eye, EyeOff, Lightbulb, LightbulbOff, Video, VideoOff } from 'lucide-react';
 import { getGameResources, FILE_BASE_URL } from '../services/api';
 import { BackgroundService } from './BackgroundService';
 import { DetectedObject as APIDetectedObject } from '../types';
+import ScreenRecorderCore, { ScreenRecorderRef } from './ui/ScreenRecord'; // Import ScreenRecorderCore và interface của nó
 
 // --- TYPES ---
 interface LocalDetectedObject {
@@ -137,6 +138,12 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
     const [spotlightActive, setSpotlightActive] = useState(false);
     const spotlightActiveRef = useRef(false); // Ref for access inside requestAnimationFrame
 
+    // --- SCREEN RECORDER STATE & REF ---
+    const screenRecorderRef = useRef<ScreenRecorderRef | null>(null);
+    const [isScreenRecording, setIsScreenRecording] = useState<boolean>(false);
+    const [isScreenRecordingPaused, setIsScreenRecordingPaused] = useState<boolean>(false);
+    const [showRecordedVideo, setShowRecordedVideo] = useState<boolean>(false); // Để điều khiển việc hiển thị video đã ghi
+
     // --- GAME STATE ---
     const gameState = useRef({
         x: 100,
@@ -171,6 +178,56 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
         setSpotlightActive(shouldSpotlight);
         spotlightActiveRef.current = shouldSpotlight;
     };
+
+    // --- SCREEN RECORDER HANDLERS ---
+    const handleStartScreenRecording = async () => {
+        await screenRecorderRef.current?.start();
+        setIsScreenRecording(true);
+        setIsScreenRecordingPaused(false);
+        setShowRecordedVideo(false); // Ẩn video cũ khi bắt đầu ghi mới
+    };
+
+    const handleStopScreenRecording = () => {
+        screenRecorderRef.current?.stop();
+        setIsScreenRecording(false);
+        setIsScreenRecordingPaused(false);
+        // Khi dừng, video sẽ tự động tải về, chúng ta có thể chọn hiển thị video preview hoặc không
+        setShowRecordedVideo(true); // Có thể bật lại để xem video preview sau khi tải
+    };
+
+    const handlePauseScreenRecording = () => {
+        screenRecorderRef.current?.pause();
+        setIsScreenRecordingPaused(true);
+    };
+
+    const handleResumeScreenRecording = () => {
+        screenRecorderRef.current?.resume();
+        setIsScreenRecordingPaused(false);
+    };
+
+    // --- useEffect để đồng bộ trạng thái ghi màn hình từ Core ---
+    // Vì GameZone là component cha và cần hiển thị trạng thái của ScreenRecorderCore
+    useEffect(() => {
+        let intervalId: NodeJS.Timeout | undefined;
+        // Chỉ chạy nếu ScreenRecorderCore đã được render (tức là isGameReady true)
+        // hoặc bạn có thể thêm một state riêng để điều khiển việc render ScreenRecorderCore
+        if (isGameReady) {
+            intervalId = setInterval(() => {
+                if (screenRecorderRef.current) {
+                    setIsScreenRecording(screenRecorderRef.current.getIsRecording());
+                    setIsScreenRecordingPaused(screenRecorderRef.current.getIsPaused());
+                    // Bạn có thể lấy videoURL ở đây nếu muốn hiển thị nó trong GameZone thay vì trong Core
+                    // const videoUrl = screenRecorderRef.current.getVideoURL();
+                    // Nếu videoUrl có, setShowRecordedVideo(true);
+                }
+            }, 200); // Cập nhật trạng thái mỗi 200ms
+        }
+        return () => {
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+        };
+    }, [isGameReady]); // Dependency có thể là isGameReady hoặc luôn chạy nếu ScreenRecorderCore luôn render
 
     // --- VIEW CALCULATION ---
     // Calculates the rendered dimensions of the background image (object-contain behavior)
@@ -378,15 +435,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                     const cy = player.y + visualOffsetY + view.offsetY + (CONFIG.RENDER_SIZE / 1.5);
 
                     spotlightEl.style.opacity = '1';
-                    // Radial gradient:
-                    // Transparent (background or dark container shows) -> White (spotlight center) -> Transparent (fade out to container background)
-                    // Hoặc, nếu muốn một vùng sáng trắng thuần túy:
                     spotlightEl.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(255,255,255,1) 0px, rgba(255,255,255,1) ${SPOTLIGHT_INNER_RADIUS}px, transparent ${SPOTLIGHT_OUTER_RADIUS}px)`;
-                    // Nếu bạn muốn vùng ngoài vẫn là đen (khi background bị ẩn), bạn có thể dùng:
-                    // spotlightEl.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(255,255,255,1) 0px, rgba(255,255,255,1) 80px, rgba(0,0,0,0.98) 200px)`;
-                    // Tuy nhiên, việc này sẽ làm che đi background gốc khi nó được hiển thị.
-                    // Với `transparent 200px` thì khi `showBackground` là `true`, bạn sẽ thấy background gốc.
-                    // Khi `showBackground` là `false`, bạn sẽ thấy nền đen của container bên ngoài vùng sáng.
                 } else {
                     spotlightEl.style.opacity = '0';
                 }
@@ -521,6 +570,44 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                                 >
                                     {showBackground ? <Eye size={20} /> : <EyeOff size={20} />}
                                 </button>
+
+                                {/* --- SCREEN RECORDER CONTROLS --- */}
+                                {!isScreenRecording ? (
+                                    <button
+                                        onClick={handleStartScreenRecording}
+                                        className="p-2 bg-slate-700/50 hover:bg-red-500 rounded-lg transition-colors text-red-400 hover:text-white border border-slate-600"
+                                        title="Start Recording"
+                                    >
+                                        <Video size={20} />
+                                    </button>
+                                ) : (
+                                    <>
+                                        {!isScreenRecordingPaused ? (
+                                            <button
+                                                onClick={handlePauseScreenRecording}
+                                                className="p-2 bg-slate-700/50 hover:bg-yellow-500 rounded-lg transition-colors text-yellow-400 hover:text-white border border-slate-600"
+                                                title="Pause Recording"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pause"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={handleResumeScreenRecording}
+                                                className="p-2 bg-slate-700/50 hover:bg-green-500 rounded-lg transition-colors text-green-400 hover:text-white border border-slate-600"
+                                                title="Resume Recording"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-play"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={handleStopScreenRecording}
+                                            className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors text-white border border-slate-600"
+                                            title="Stop Recording"
+                                        >
+                                            <VideoOff size={20} />
+                                        </button>
+                                    </>
+                                )}
                                 {loading && <RefreshCw className="animate-spin text-indigo-500" />}
                             </div>
                         </div>
@@ -646,6 +733,12 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                 </div>
 
             </div>
+            {/* --- SCREEN RECORDER CORE COMPONENT --- */}
+            {/* Chỉ render ScreenRecorderCore khi game đã sẵn sàng hoặc đang ghi
+                hoặc có video đã ghi để hiển thị preview. Điều này giúp kiểm soát vòng đời của nó. */}
+            {(isGameReady || isScreenRecording || showRecordedVideo) && (
+                <ScreenRecorderCore ref={screenRecorderRef} />
+            )}
         </div>
     );
 };
