@@ -20,6 +20,7 @@ interface GameAssets {
 interface GameZoneProps {
     sessionId: string | null;
     isGameReady: boolean;
+    onResourcesLoaded: () => void; // New prop for the callback
 }
 
 // --- GAME CONFIGURATION ---
@@ -39,7 +40,7 @@ const SPOTLIGHT_OUTER_RADIUS = 140; // Bán kính vùng sáng mờ dần
 const FRAME_DELAY = 1000 / CONFIG.TARGET_FPS;
 
 // --- HOOK: Load Resources & Image Meta ---
-const useGameResources = (gameId: string | null, shouldFetch: boolean) => {
+const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourcesLoaded: () => void) => { // Add onResourcesLoaded here
     const [data, setData] = useState<GameAssets>({ bgUrl: null, objects: [], actions: {} });
     const [bgMeta, setBgMeta] = useState<{ width: number; height: number; ratio: number } | null>(null);
     const [loading, setLoading] = useState(false);
@@ -92,6 +93,9 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean) => {
                     actions
                 });
 
+                // Trigger the callback after successfully setting the data
+                onResourcesLoaded();
+
             } catch (err: any) {
                 setError(err.message);
             } finally {
@@ -100,7 +104,7 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean) => {
         };
 
         fetchData();
-    }, [gameId, shouldFetch]);
+    }, [gameId, shouldFetch, onResourcesLoaded]); // Add onResourcesLoaded to dependency array
 
     useEffect(() => {
         if (!data.bgUrl) return;
@@ -118,9 +122,9 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean) => {
     return { data, setData, bgMeta, loading, error };
 };
 
-export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) => {
-    const { data, setData, bgMeta, loading } = useGameResources(sessionId, isGameReady);
-
+export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onResourcesLoaded }) => { // Destructure onResourcesLoaded
+    const { data, setData, bgMeta, loading } = useGameResources(sessionId, isGameReady, onResourcesLoaded); // Pass onResourcesLoaded to the hook
+    // ... rest of your GameZone component remains the same ...
     const containerRef = useRef<HTMLDivElement>(null);
     const [view, setView] = useState({
         scale: 1,
@@ -571,6 +575,15 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                                     {showBackground ? <Eye size={20} /> : <EyeOff size={20} />}
                                 </button>
 
+                                {/* Fullscreen Button (Moved here) */}
+                                <button
+                                    onClick={toggleFullscreen}
+                                    className="p-2 bg-slate-700/50 hover:bg-slate-700 text-white rounded-lg transition-colors border border-slate-600"
+                                    title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                                >
+                                    {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+                                </button>
+
                                 {/* --- SCREEN RECORDER CONTROLS --- */}
                                 {!isScreenRecording ? (
                                     <button
@@ -627,13 +640,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady }) =>
                         onClick={() => setIsFocused(true)}
                         tabIndex={0}
                     >
-                        <button
-                            onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-                            className="absolute top-4 right-4 z-50 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full backdrop-blur-sm border border-white/20 transition-colors opacity-0 group-hover:opacity-100"
-                        >
-                            {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
-                        </button>
-
+                        {/* The fullscreen button is REMOVED from here */}
                         {loading && <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900"><RefreshCw className="animate-spin text-indigo-500 w-8 h-8" /></div>}
                         {!isGameReady && !loading && <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 text-slate-400"><Lock className="w-10 h-10 mb-2" /><p>Complete Animation Step first</p></div>}
 

@@ -23,6 +23,11 @@ function App() {
     setIsAnimationFinished(true);
   };
 
+  // New handler to reset animation status when game resources are loaded
+  const handleGameResourcesLoaded = () => {
+    setIsAnimationFinished(true); // Assuming if resources load, the game can start, effectively "resetting" the animation dependency
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-indigo-500/30 font-inter">
       {/* Navigation */}
@@ -127,6 +132,7 @@ function App() {
           <GameZone
             sessionId={sessionId}
             isGameReady={isAnimationFinished}
+            onResourcesLoaded={handleGameResourcesLoaded} // Pass the new handler
           />
         </div>
       </main>
