@@ -110,7 +110,8 @@ export const BODY_TEMPLATES = [
 
 export interface DetectedObject {
   label: string;
-  polygon?: number[][]; // [[x1, y1], [x2, y2], ...]
+  polygon: [number, number][]; // [[x1, y1], [x2, y2], ...]
+  id_polygon: number
 }
 
 export interface GameResourcesResponse {
