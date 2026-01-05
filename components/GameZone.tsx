@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useRef, useLayoutEffect, useCallback } from 'react';
 import { Terminal, RefreshCw, Maximize, Minimize, Lock, Eye, EyeOff, Lightbulb, LightbulbOff, Video, VideoOff } from 'lucide-react';
 import { getGameResources, FILE_BASE_URL } from '../services/api';
 import { BackgroundService } from './BackgroundService';
@@ -7,8 +7,10 @@ import ScreenRecorderCore, { ScreenRecorderRef } from './ui/ScreenRecord'; // Im
 
 // --- TYPES ---
 interface LocalDetectedObject {
+    id: string | number;
     name: string;
     polygon: number[][];
+    bbox: number[] | null;
 }
 
 interface GameAssets {
@@ -82,9 +84,11 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourc
                 if (!actions.run) actions.run = actions.idle;
                 if (!actions.jump) actions.jump = actions.idle;
 
-                const mappedObjects: LocalDetectedObject[] = (res.detected_objects || []).map((obj) => ({
-                    name: obj.label || 'Object',
-                    polygon: obj.polygon || []
+                const mappedObjects: LocalDetectedObject[] = (res.detected_objects || []).map((obj, index) => ({
+                    id: obj.id_polygon || `poly-${index}`, // Gán ID, sử dụng index làm fallback
+                    name: obj.name || 'Object',
+                    polygon: obj.polygon || [],
+                    bbox: obj.bbox || [] // Lấy bbox từ API, giả định APIDetectedObject có trường 'obj_bbox'
                 })).filter((o) => o.polygon.length > 0);
 
                 setData({
@@ -124,7 +128,6 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourc
 
 export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onResourcesLoaded }) => { // Destructure onResourcesLoaded
     const { data, setData, bgMeta, loading } = useGameResources(sessionId, isGameReady, onResourcesLoaded); // Pass onResourcesLoaded to the hook
-    // ... rest of your GameZone component remains the same ...
     const containerRef = useRef<HTMLDivElement>(null);
     const [view, setView] = useState({
         scale: 1,
@@ -141,6 +144,10 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
     // Spotlight Effect State
     const [spotlightActive, setSpotlightActive] = useState(false);
     const spotlightActiveRef = useRef(false); // Ref for access inside requestAnimationFrame
+
+    // NEW: State để lưu polygon mà nhân vật đang đứng trên
+    const [currentGroundPolygon, setCurrentGroundPolygon] = useState<LocalDetectedObject | null>(null);
+
 
     // --- SCREEN RECORDER STATE & REF ---
     const screenRecorderRef = useRef<ScreenRecorderRef | null>(null);
@@ -159,7 +166,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         onGround: false
     });
 
-    const scaledPolygonsRef = useRef<number[][][]>([]);
+    const scaledPolygonsRef = useRef<number[][][]>([]); // This ref is now less critical for collision detection logic due to update in checkGroundCollision
 
     const keys = useRef<Record<string, boolean>>({});
     const reqRef = useRef<number | undefined>(undefined);
@@ -279,7 +286,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         return () => resizeObserver.disconnect();
     }, [bgMeta, isFullscreen]);
 
-    // Update scaled polygons based on calculated view scale
+    // Update scaled polygons based on calculated view scale - This is now primarily for rendering, not collision
     useEffect(() => {
         if (data.objects.length > 0 && view.scale > 0) {
             scaledPolygonsRef.current = data.objects.map(obj =>
@@ -294,38 +301,72 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
     }, [data.objects, view.scale, view.width, view.height]);
 
     // --- PHYSICS HELPERS ---
-    const checkGroundCollision = (currX: number, currY: number) => {
-        let groundY: number | null = null;
+    const checkGroundCollision = useCallback((currX: number, currY: number): { groundY: number; polygon: LocalDetectedObject } | null => {
+        let minGroundY: number | null = null;
+        let collidedPolygon: LocalDetectedObject | null = null;
+
         const footX = currX + CONFIG.CHAR_WIDTH / 2;
         const footY = currY + CONFIG.CHAR_HEIGHT;
 
-        for (const poly of scaledPolygonsRef.current) {
-            for (let i = 0; i < poly.length; i++) {
-                const p1 = poly[i];
-                const p2 = poly[(i + 1) % poly.length];
+        for (const obj of data.objects) { // Lặp qua các object gốc
+            const poly = obj.polygon; // Polygon gốc
+            const scaledPoly = poly.map(p => [p[0] * view.scale, p[1] * view.scale]); // Scale polygon tại đây
+
+            for (let i = 0; i < scaledPoly.length; i++) {
+                const p1 = scaledPoly[i];
+                const p2 = scaledPoly[(i + 1) % scaledPoly.length];
 
                 const minX = Math.min(p1[0], p2[0]);
                 const maxX = Math.max(p1[0], p2[0]);
 
                 if (footX >= minX && footX <= maxX) {
-                    if (p2[0] - p1[0] !== 0) {
+                    // Tránh chia cho 0 nếu đoạn thẳng đứng
+                    if (Math.abs(p2[0] - p1[0]) > 0.001) {
                         const slope = (p2[1] - p1[1]) / (p2[0] - p1[0]);
                         const yOnLine = p1[1] + slope * (footX - p1[0]);
 
+                        // Điều chỉnh ngưỡng va chạm
+                        // +25 là ngưỡng "vượt qua" để nhân vật không bị kẹt khi đi lên dốc nhẹ
+                        // -10 là ngưỡng "dưới" để bắt va chạm sớm hơn một chút
                         if (footY >= yOnLine - 10 && footY <= yOnLine + 25) {
-                            if (groundY === null || yOnLine < groundY) {
-                                groundY = yOnLine;
+                            if (minGroundY === null || yOnLine < minGroundY) {
+                                minGroundY = yOnLine;
+                                collidedPolygon = obj; // Lưu trữ object gốc
                             }
                         }
                     }
                 }
             }
         }
-        return groundY;
-    };
+
+        // Xử lý sàn mặc định nếu không có polygon nào được phát hiện
+        if (minGroundY === null) {
+            const floorY = view.height - 20;
+            // Kiểm tra xem nhân vật có chạm sàn mặc định không
+            if (footY >= floorY - 10 && footY <= floorY + 25) {
+                // Tạo một object giả định cho sàn mặc định
+                const defaultFloorObject: LocalDetectedObject = {
+                    id: 'default-floor',
+                    name: 'Default Floor',
+                    // Chuyển đổi tọa độ polygon về "không gian gốc" trước khi scale
+                    polygon: [[0, floorY / view.scale], [view.width / view.scale, floorY / view.scale], [view.width / view.scale, (floorY + 50) / view.scale], [0, (floorY + 50) / view.scale]],
+                    // Bbox cũng trong không gian gốc
+                    bbox: [0, floorY / view.scale, view.width / view.scale, (floorY + 50) / view.scale]
+                };
+                minGroundY = floorY;
+                collidedPolygon = defaultFloorObject;
+            }
+        }
+
+        if (minGroundY !== null && collidedPolygon !== null) {
+            return { groundY: minGroundY, polygon: collidedPolygon };
+        }
+        return null;
+    }, [data.objects, view.scale, view.width, view.height]); // Thêm dependencies
+
 
     // --- GAME LOOP ---
-    const update = (timestamp: number) => {
+    const update = useCallback((timestamp: number) => {
         if (!containerRef.current || !bgMeta) {
             reqRef.current = requestAnimationFrame(update);
             return;
@@ -373,22 +414,32 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
 
             // C. Ground Collision
             player.onGround = false;
+            let newGroundPolygon: LocalDetectedObject | null = null; // Biến tạm để lưu polygon mới
+
             if (player.vy >= 0) {
-                const groundLevel = checkGroundCollision(player.x, player.y);
-                if (groundLevel !== null) {
-                    player.y = groundLevel - CONFIG.CHAR_HEIGHT;
+                const collisionResult = checkGroundCollision(player.x, player.y);
+                if (collisionResult !== null) {
+                    player.y = collisionResult.groundY - CONFIG.CHAR_HEIGHT;
                     player.vy = 0;
                     player.onGround = true;
+                    newGroundPolygon = collisionResult.polygon; // Lấy polygon va chạm
                 }
             }
 
-            // Fallback: Floor collision
+            // Fallback: Floor collision (nếu nhân vật rơi quá xa)
             if (player.y > view.height - CONFIG.CHAR_HEIGHT) {
-                if (player.y > view.height + 100) {
+                if (player.y > view.height + 100) { // Nếu rơi quá xa, reset vị trí
                     player.x = 50;
                     player.y = 0;
                     player.vy = 0;
+                    newGroundPolygon = null; // Không đứng trên polygon nào
                 }
+                // Logic cho sàn mặc định đã được tích hợp vào checkGroundCollision
+            }
+
+            // Cập nhật currentGroundPolygon chỉ khi có sự thay đổi về ID
+            if (currentGroundPolygon?.id !== newGroundPolygon?.id) {
+                setCurrentGroundPolygon(newGroundPolygon);
             }
 
             // D. Render Updates
@@ -447,7 +498,8 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         }
 
         reqRef.current = requestAnimationFrame(update);
-    };
+    }, [bgMeta, checkGroundCollision, currentGroundPolygon?.id, data.actions, view, setCurrentGroundPolygon]); // Add dependencies for useCallback
+
 
     // --- EVENT LISTENERS ---
     useEffect(() => {
@@ -496,13 +548,15 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             window.removeEventListener('keyup', onKeyUp);
             if (reqRef.current) cancelAnimationFrame(reqRef.current);
         };
-    }, [bgMeta, isFocused, isFullscreen, view]);
+    }, [bgMeta, isFocused, isFullscreen, update]); // Added `update` to dependencies because it's now wrapped in useCallback
 
     // --- OTHER HANDLERS ---
     const handleAnalysisComplete = (bgDataUrl: string, platforms: APIDetectedObject[]) => {
-        const mappedObjects: LocalDetectedObject[] = platforms.map(p => ({
-            name: p.label,
-            polygon: p.polygon || []
+        const mappedObjects: LocalDetectedObject[] = platforms.map((p, index) => ({
+            id: p.id_polygon || `poly-${index}`, // Gán ID, sử dụng index làm fallback
+            name: p.name,
+            polygon: p.polygon || [],
+            bbox: p.bbox || [] // Lấy bbox
         })).filter(p => p.polygon.length > 0);
 
         setData(prev => ({
@@ -553,6 +607,10 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                                 </h2>
                                 <div className="text-xs text-slate-400 font-mono mt-1">
                                     {bgMeta ? `Res: ${bgMeta.width}x${bgMeta.height} | Scale: ${view.scale.toFixed(3)}` : 'Waiting for resources...'}
+                                    {/* NEW: Hiển thị thông tin polygon hiện tại */}
+                                    <p>
+                                        On: {currentGroundPolygon ? `${currentGroundPolygon.name} (ID: ${currentGroundPolygon.id})` : 'Air / Default Floor'}
+                                    </p>
                                 </div>
                             </div>
 
@@ -657,12 +715,12 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                         {bgMeta && (
                             <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
                                 <g transform={`translate(${view.offsetX}, ${view.offsetY})`}>
-                                    {data.objects.map((obj, i) => {
+                                    {data.objects.map((obj, _i) => {
                                         const pointsStr = obj.polygon
                                             .map(p => `${p[0] * view.scale},${p[1] * view.scale}`)
                                             .join(' ');
                                         return (
-                                            <g key={i}>
+                                            <g key={obj.id}> {/* Sử dụng obj.id làm key */}
                                                 <polygon
                                                     points={pointsStr}
                                                     fill="rgba(255, 255, 255, 0)"

@@ -109,9 +109,10 @@ export const BODY_TEMPLATES = [
 ];
 
 export interface DetectedObject {
-  label: string;
+  name: string;
   polygon: [number, number][]; // [[x1, y1], [x2, y2], ...]
-  id_polygon: number
+  id_polygon: number;
+  bbox: number[] | null
 }
 
 export interface GameResourcesResponse {
