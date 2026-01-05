@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useCallback } from 'react';
 import { Terminal, RefreshCw, Maximize, Minimize, Lock, Eye, EyeOff, Lightbulb, LightbulbOff, Video, VideoOff } from 'lucide-react';
-import { getGameResources, FILE_BASE_URL } from '../services/api';
+import { getGameResources, FILE_BASE_URL, updateCharacterLocation } from '../services/api';
 import { BackgroundService } from './BackgroundService';
 import ScreenRecorderCore, { ScreenRecorderRef } from './ui/ScreenRecord'; // Import ScreenRecorderCore và interface của nó
 
 // NEW: Import the LocalDetectedObject type and our new hook
-import { LocalDetectedObject, APIDetectedObject } from '../types'; // Đảm bảo đường dẫn đúng
+import { LocalDetectedObject, LocationData, APIDetectedObject, UpdateLocationResponse } from '../types'; // Đảm bảo đường dẫn đúng
 import { useCollisionDetection } from '../hooks/useCollisionDetection';
 
 interface GameAssets {
@@ -230,6 +230,11 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         setIsScreenRecordingPaused(false);
     };
 
+    const toLocationData = (obj: LocalDetectedObject): LocationData => ({
+        ...obj,
+        bbox: obj.bbox ?? undefined, // ensure `undefined` instead of `null`
+    });
+
     // --- useEffect to sync screen recording state from Core ---
     useEffect(() => {
         let intervalId: NodeJS.Timeout | undefined;
@@ -309,7 +314,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
 
 
     // --- GAME LOOP ---
-    const update = useCallback((timestamp: number) => {
+    const update = useCallback(async (timestamp: number) => {
         if (!containerRef.current || !bgMeta) {
             reqRef.current = requestAnimationFrame(update);
             return;
@@ -382,6 +387,28 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             // Update currentGroundPolygon only if there's a change in ID
             if (currentGroundPolygon?.id !== newGroundPolygon?.id) {
                 setCurrentGroundPolygon(newGroundPolygon);
+
+                // Kiểm tra xem newGroundPolygon có tồn tại trước khi gọi API
+                if (newGroundPolygon) {
+                    try {
+                        // Gọi API updateCharacterLocation với dữ liệu từ newGroundPolygon
+                        // newGroundPolygon cần có kiểu tương thích với LocationData
+                        const response: UpdateLocationResponse = await updateCharacterLocation(toLocationData(newGroundPolygon));
+
+                        if (response.success) {
+                            console.log("Cập nhật vị trí ground polygon thành công:", response.message);
+                            // Bạn có thể thêm logic xử lý thành công tại đây, ví dụ: hiển thị thông báo
+                        } else {
+                            console.error("Cập nhật vị trí ground polygon thất bại:", response.message);
+                            // Xử lý lỗi từ server
+                        }
+                    } catch (error) {
+                        console.error("Lỗi khi gọi API cập nhật vị trí ground polygon:", error);
+                        // Xử lý lỗi mạng hoặc lỗi khác trong quá trình gọi API
+                    }
+                } else {
+                    console.warn("newGroundPolygon is null or undefined, skipping API call.");
+                }
             }
 
             // D. Render Updates

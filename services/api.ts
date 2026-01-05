@@ -6,7 +6,9 @@ import {
   AnimationStep2Response,
   AnimationStep3Response,
   GameResourcesResponse,
-  DetectedObject
+  DetectedObject,
+  LocationData,
+  UpdateLocationResponse
 } from '../types';
 
 // Configuration
@@ -148,4 +150,14 @@ export const analyzeBackgroundSvg = async (
       body: formData,
     }
   );
+};
+
+export const updateCharacterLocation = async (locationData: LocationData): Promise<UpdateLocationResponse> => {
+  return request<UpdateLocationResponse>(`/updateLocation`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(locationData),
+  });
 };

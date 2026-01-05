@@ -130,15 +130,28 @@ export const CHARACTER_TEMPLATES = [
 ]
 
 export interface LocalDetectedObject {
-    id: string | number;
-    name: string;
-    polygon: number[][];
-    bbox: number[] | null;
+  id: string | number;
+  name: string;
+  polygon: number[][];
+  bbox: number[] | null;
 }
 
 export interface APIDetectedObject {
-    id_polygon: string | number;
-    name: string;
-    polygon: number[][];
-    bbox: number[] | null;
+  id_polygon: string | number;
+  name: string;
+  polygon: number[][];
+  bbox: number[] | null;
+}
+
+export interface LocationData {
+  id: string | number; // Union[str, int]
+  name: string;
+  bbox?: number[]; // Optional[List[float]]
+  audio_base64?: string; // Optional[str]
+  audio_format?: string; // Optional[str]
+}
+
+export interface UpdateLocationResponse {
+  success: boolean;
+  message?: string;
 }
