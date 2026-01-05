@@ -128,3 +128,17 @@ export const CHARACTER_TEMPLATES = [
   { id: 'tpl3', name: 'Magical Girl', url: magicalGirl },
   { id: 'tpl4', name: 'Cute Kid', url: cuteKid },
 ]
+
+export interface LocalDetectedObject {
+    id: string | number;
+    name: string;
+    polygon: number[][];
+    bbox: number[] | null;
+}
+
+export interface APIDetectedObject {
+    id_polygon: string | number;
+    name: string;
+    polygon: number[][];
+    bbox: number[] | null;
+}

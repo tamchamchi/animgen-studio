@@ -2,16 +2,11 @@ import React, { useEffect, useState, useRef, useLayoutEffect, useCallback } from
 import { Terminal, RefreshCw, Maximize, Minimize, Lock, Eye, EyeOff, Lightbulb, LightbulbOff, Video, VideoOff } from 'lucide-react';
 import { getGameResources, FILE_BASE_URL } from '../services/api';
 import { BackgroundService } from './BackgroundService';
-import { DetectedObject as APIDetectedObject } from '../types';
 import ScreenRecorderCore, { ScreenRecorderRef } from './ui/ScreenRecord'; // Import ScreenRecorderCore và interface của nó
 
-// --- TYPES ---
-interface LocalDetectedObject {
-    id: string | number;
-    name: string;
-    polygon: number[][];
-    bbox: number[] | null;
-}
+// NEW: Import the LocalDetectedObject type and our new hook
+import { LocalDetectedObject, APIDetectedObject } from '../types'; // Đảm bảo đường dẫn đúng
+import { useCollisionDetection } from '../hooks/useCollisionDetection';
 
 interface GameAssets {
     bgUrl: string | null;
@@ -35,14 +30,18 @@ const CONFIG = {
     CHAR_WIDTH: 60,
     CHAR_HEIGHT: 100,
 
-    RENDER_SIZE: 256
+    RENDER_SIZE: 256,
+
+    // NEW: Collision thresholds moved to config for use in the hook
+    COLLISION_THRESHOLD_UP: 25, // Ngưỡng "vượt qua" để nhân vật không bị kẹt khi đi lên dốc nhẹ
+    COLLISION_THRESHOLD_DOWN: 10 // Ngưỡng "dưới" để bắt va chạm sớm hơn một chút
 };
 const SPOTLIGHT_INNER_RADIUS = 20; // Bán kính vùng sáng đặc
 const SPOTLIGHT_OUTER_RADIUS = 140; // Bán kính vùng sáng mờ dần
 const FRAME_DELAY = 1000 / CONFIG.TARGET_FPS;
 
 // --- HOOK: Load Resources & Image Meta ---
-const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourcesLoaded: () => void) => { // Add onResourcesLoaded here
+const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourcesLoaded: () => void) => {
     const [data, setData] = useState<GameAssets>({ bgUrl: null, objects: [], actions: {} });
     const [bgMeta, setBgMeta] = useState<{ width: number; height: number; ratio: number } | null>(null);
     const [loading, setLoading] = useState(false);
@@ -85,10 +84,10 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourc
                 if (!actions.jump) actions.jump = actions.idle;
 
                 const mappedObjects: LocalDetectedObject[] = (res.detected_objects || []).map((obj, index) => ({
-                    id: obj.id_polygon || `poly-${index}`, // Gán ID, sử dụng index làm fallback
+                    id: obj.id_polygon || `poly-${index}`,
                     name: obj.name || 'Object',
                     polygon: obj.polygon || [],
-                    bbox: obj.bbox || [] // Lấy bbox từ API, giả định APIDetectedObject có trường 'obj_bbox'
+                    bbox: obj.bbox || []
                 })).filter((o) => o.polygon.length > 0);
 
                 setData({
@@ -97,7 +96,6 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourc
                     actions
                 });
 
-                // Trigger the callback after successfully setting the data
                 onResourcesLoaded();
 
             } catch (err: any) {
@@ -108,7 +106,7 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourc
         };
 
         fetchData();
-    }, [gameId, shouldFetch, onResourcesLoaded]); // Add onResourcesLoaded to dependency array
+    }, [gameId, shouldFetch, onResourcesLoaded]);
 
     useEffect(() => {
         if (!data.bgUrl) return;
@@ -126,8 +124,8 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourc
     return { data, setData, bgMeta, loading, error };
 };
 
-export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onResourcesLoaded }) => { // Destructure onResourcesLoaded
-    const { data, setData, bgMeta, loading } = useGameResources(sessionId, isGameReady, onResourcesLoaded); // Pass onResourcesLoaded to the hook
+export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onResourcesLoaded }) => {
+    const { data, setData, bgMeta, loading } = useGameResources(sessionId, isGameReady, onResourcesLoaded);
     const containerRef = useRef<HTMLDivElement>(null);
     const [view, setView] = useState({
         scale: 1,
@@ -145,7 +143,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
     const [spotlightActive, setSpotlightActive] = useState(false);
     const spotlightActiveRef = useRef(false); // Ref for access inside requestAnimationFrame
 
-    // NEW: State để lưu polygon mà nhân vật đang đứng trên
+    // NEW: State to store the polygon the character is currently standing on
     const [currentGroundPolygon, setCurrentGroundPolygon] = useState<LocalDetectedObject | null>(null);
 
 
@@ -153,7 +151,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
     const screenRecorderRef = useRef<ScreenRecorderRef | null>(null);
     const [isScreenRecording, setIsScreenRecording] = useState<boolean>(false);
     const [isScreenRecordingPaused, setIsScreenRecordingPaused] = useState<boolean>(false);
-    const [showRecordedVideo, setShowRecordedVideo] = useState<boolean>(false); // Để điều khiển việc hiển thị video đã ghi
+    const [showRecordedVideo, setShowRecordedVideo] = useState<boolean>(false); // To control video preview display
 
     // --- GAME STATE ---
     const gameState = useRef({
@@ -166,11 +164,28 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         onGround: false
     });
 
-    const scaledPolygonsRef = useRef<number[][][]>([]); // This ref is now less critical for collision detection logic due to update in checkGroundCollision
+    // scaledPolygonsRef is less critical now for collision due to useCollisionDetection,
+    // but can still be used for rendering visual polygon outlines if needed.
+    const scaledPolygonsRef = useRef<number[][][]>([]);
 
     const keys = useRef<Record<string, boolean>>({});
     const reqRef = useRef<number | undefined>(undefined);
     const lastTimeRef = useRef<number>(0);
+
+    // NEW: Use the custom collision detection hook
+    const { checkGroundCollision } = useCollisionDetection(
+        data.objects,
+        view.scale,
+        view.width,
+        view.height,
+        {
+            charWidth: CONFIG.CHAR_WIDTH,
+            charHeight: CONFIG.CHAR_HEIGHT,
+            collisionThresholdUp: CONFIG.COLLISION_THRESHOLD_UP,
+            collisionThresholdDown: CONFIG.COLLISION_THRESHOLD_DOWN,
+        }
+    );
+
 
     const toggleSpotlight = () => {
         const newState = !spotlightActive;
@@ -195,15 +210,14 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         await screenRecorderRef.current?.start();
         setIsScreenRecording(true);
         setIsScreenRecordingPaused(false);
-        setShowRecordedVideo(false); // Ẩn video cũ khi bắt đầu ghi mới
+        setShowRecordedVideo(false); // Hide old video when starting new recording
     };
 
     const handleStopScreenRecording = () => {
         screenRecorderRef.current?.stop();
         setIsScreenRecording(false);
         setIsScreenRecordingPaused(false);
-        // Khi dừng, video sẽ tự động tải về, chúng ta có thể chọn hiển thị video preview hoặc không
-        setShowRecordedVideo(true); // Có thể bật lại để xem video preview sau khi tải
+        setShowRecordedVideo(true); // Can show video preview after download
     };
 
     const handlePauseScreenRecording = () => {
@@ -216,32 +230,25 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         setIsScreenRecordingPaused(false);
     };
 
-    // --- useEffect để đồng bộ trạng thái ghi màn hình từ Core ---
-    // Vì GameZone là component cha và cần hiển thị trạng thái của ScreenRecorderCore
+    // --- useEffect to sync screen recording state from Core ---
     useEffect(() => {
         let intervalId: NodeJS.Timeout | undefined;
-        // Chỉ chạy nếu ScreenRecorderCore đã được render (tức là isGameReady true)
-        // hoặc bạn có thể thêm một state riêng để điều khiển việc render ScreenRecorderCore
         if (isGameReady) {
             intervalId = setInterval(() => {
                 if (screenRecorderRef.current) {
                     setIsScreenRecording(screenRecorderRef.current.getIsRecording());
                     setIsScreenRecordingPaused(screenRecorderRef.current.getIsPaused());
-                    // Bạn có thể lấy videoURL ở đây nếu muốn hiển thị nó trong GameZone thay vì trong Core
-                    // const videoUrl = screenRecorderRef.current.getVideoURL();
-                    // Nếu videoUrl có, setShowRecordedVideo(true);
                 }
-            }, 200); // Cập nhật trạng thái mỗi 200ms
+            }, 200); // Update state every 200ms
         }
         return () => {
             if (intervalId) {
                 clearInterval(intervalId);
             }
         };
-    }, [isGameReady]); // Dependency có thể là isGameReady hoặc luôn chạy nếu ScreenRecorderCore luôn render
+    }, [isGameReady]);
 
     // --- VIEW CALCULATION ---
-    // Calculates the rendered dimensions of the background image (object-contain behavior)
     useLayoutEffect(() => {
         if (!containerRef.current || !bgMeta) return;
 
@@ -300,70 +307,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         }
     }, [data.objects, view.scale, view.width, view.height]);
 
-    // --- PHYSICS HELPERS ---
-    const checkGroundCollision = useCallback((currX: number, currY: number): { groundY: number; polygon: LocalDetectedObject } | null => {
-        let minGroundY: number | null = null;
-        let collidedPolygon: LocalDetectedObject | null = null;
-
-        const footX = currX + CONFIG.CHAR_WIDTH / 2;
-        const footY = currY + CONFIG.CHAR_HEIGHT;
-
-        for (const obj of data.objects) { // Lặp qua các object gốc
-            const poly = obj.polygon; // Polygon gốc
-            const scaledPoly = poly.map(p => [p[0] * view.scale, p[1] * view.scale]); // Scale polygon tại đây
-
-            for (let i = 0; i < scaledPoly.length; i++) {
-                const p1 = scaledPoly[i];
-                const p2 = scaledPoly[(i + 1) % scaledPoly.length];
-
-                const minX = Math.min(p1[0], p2[0]);
-                const maxX = Math.max(p1[0], p2[0]);
-
-                if (footX >= minX && footX <= maxX) {
-                    // Tránh chia cho 0 nếu đoạn thẳng đứng
-                    if (Math.abs(p2[0] - p1[0]) > 0.001) {
-                        const slope = (p2[1] - p1[1]) / (p2[0] - p1[0]);
-                        const yOnLine = p1[1] + slope * (footX - p1[0]);
-
-                        // Điều chỉnh ngưỡng va chạm
-                        // +25 là ngưỡng "vượt qua" để nhân vật không bị kẹt khi đi lên dốc nhẹ
-                        // -10 là ngưỡng "dưới" để bắt va chạm sớm hơn một chút
-                        if (footY >= yOnLine - 10 && footY <= yOnLine + 25) {
-                            if (minGroundY === null || yOnLine < minGroundY) {
-                                minGroundY = yOnLine;
-                                collidedPolygon = obj; // Lưu trữ object gốc
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Xử lý sàn mặc định nếu không có polygon nào được phát hiện
-        if (minGroundY === null) {
-            const floorY = view.height - 20;
-            // Kiểm tra xem nhân vật có chạm sàn mặc định không
-            if (footY >= floorY - 10 && footY <= floorY + 25) {
-                // Tạo một object giả định cho sàn mặc định
-                const defaultFloorObject: LocalDetectedObject = {
-                    id: 'default-floor',
-                    name: 'Default Floor',
-                    // Chuyển đổi tọa độ polygon về "không gian gốc" trước khi scale
-                    polygon: [[0, floorY / view.scale], [view.width / view.scale, floorY / view.scale], [view.width / view.scale, (floorY + 50) / view.scale], [0, (floorY + 50) / view.scale]],
-                    // Bbox cũng trong không gian gốc
-                    bbox: [0, floorY / view.scale, view.width / view.scale, (floorY + 50) / view.scale]
-                };
-                minGroundY = floorY;
-                collidedPolygon = defaultFloorObject;
-            }
-        }
-
-        if (minGroundY !== null && collidedPolygon !== null) {
-            return { groundY: minGroundY, polygon: collidedPolygon };
-        }
-        return null;
-    }, [data.objects, view.scale, view.width, view.height]); // Thêm dependencies
-
 
     // --- GAME LOOP ---
     const update = useCallback((timestamp: number) => {
@@ -414,7 +357,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
 
             // C. Ground Collision
             player.onGround = false;
-            let newGroundPolygon: LocalDetectedObject | null = null; // Biến tạm để lưu polygon mới
+            let newGroundPolygon: LocalDetectedObject | null = null;
 
             if (player.vy >= 0) {
                 const collisionResult = checkGroundCollision(player.x, player.y);
@@ -422,7 +365,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                     player.y = collisionResult.groundY - CONFIG.CHAR_HEIGHT;
                     player.vy = 0;
                     player.onGround = true;
-                    newGroundPolygon = collisionResult.polygon; // Lấy polygon va chạm
+                    newGroundPolygon = collisionResult.polygon;
                 }
             }
 
@@ -432,12 +375,11 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                     player.x = 50;
                     player.y = 0;
                     player.vy = 0;
-                    newGroundPolygon = null; // Không đứng trên polygon nào
+                    newGroundPolygon = null;
                 }
-                // Logic cho sàn mặc định đã được tích hợp vào checkGroundCollision
             }
 
-            // Cập nhật currentGroundPolygon chỉ khi có sự thay đổi về ID
+            // Update currentGroundPolygon only if there's a change in ID
             if (currentGroundPolygon?.id !== newGroundPolygon?.id) {
                 setCurrentGroundPolygon(newGroundPolygon);
             }
@@ -473,7 +415,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                 if (bubbleEl) {
                     if (player.state === 'speak') {
                         bubbleEl.style.opacity = '1';
-                        // Keep scale animation but remove translation logic that conflicts with 'right' positioning
                         bubbleEl.style.transform = 'scale(1)';
                     } else {
                         bubbleEl.style.opacity = '0';
@@ -498,7 +439,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         }
 
         reqRef.current = requestAnimationFrame(update);
-    }, [bgMeta, checkGroundCollision, currentGroundPolygon?.id, data.actions, view, setCurrentGroundPolygon]); // Add dependencies for useCallback
+    }, [bgMeta, checkGroundCollision, currentGroundPolygon?.id, data.actions, view, setCurrentGroundPolygon]); // checkGroundCollision is now a dependency
 
 
     // --- EVENT LISTENERS ---
@@ -521,7 +462,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             // DROP DOWN MECHANIC
             if (e.key === 'ArrowDown' && gameState.current.onGround) {
                 // Push Y down by 30px to exceed the collision threshold (+25px)
-                // This causes the physics engine to not "snap" to the current line, effectively falling through.
                 gameState.current.y += 30;
                 gameState.current.onGround = false;
             }
@@ -548,15 +488,15 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             window.removeEventListener('keyup', onKeyUp);
             if (reqRef.current) cancelAnimationFrame(reqRef.current);
         };
-    }, [bgMeta, isFocused, isFullscreen, update]); // Added `update` to dependencies because it's now wrapped in useCallback
+    }, [bgMeta, isFocused, isFullscreen, update]);
 
     // --- OTHER HANDLERS ---
     const handleAnalysisComplete = (bgDataUrl: string, platforms: APIDetectedObject[]) => {
         const mappedObjects: LocalDetectedObject[] = platforms.map((p, index) => ({
-            id: p.id_polygon || `poly-${index}`, // Gán ID, sử dụng index làm fallback
+            id: p.id_polygon || `poly-${index}`,
             name: p.name,
             polygon: p.polygon || [],
-            bbox: p.bbox || [] // Lấy bbox
+            bbox: p.bbox || []
         })).filter(p => p.polygon.length > 0);
 
         setData(prev => ({
@@ -607,7 +547,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                                 </h2>
                                 <div className="text-xs text-slate-400 font-mono mt-1">
                                     {bgMeta ? `Res: ${bgMeta.width}x${bgMeta.height} | Scale: ${view.scale.toFixed(3)}` : 'Waiting for resources...'}
-                                    {/* NEW: Hiển thị thông tin polygon hiện tại */}
                                     <p>
                                         On: {currentGroundPolygon ? `${currentGroundPolygon.name} (ID: ${currentGroundPolygon.id})` : 'Air / Default Floor'}
                                     </p>
@@ -698,7 +637,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                         onClick={() => setIsFocused(true)}
                         tabIndex={0}
                     >
-                        {/* The fullscreen button is REMOVED from here */}
                         {loading && <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900"><RefreshCw className="animate-spin text-indigo-500 w-8 h-8" /></div>}
                         {!isGameReady && !loading && <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 text-slate-400"><Lock className="w-10 h-10 mb-2" /><p>Complete Animation Step first</p></div>}
 
@@ -720,7 +658,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                                             .map(p => `${p[0] * view.scale},${p[1] * view.scale}`)
                                             .join(' ');
                                         return (
-                                            <g key={obj.id}> {/* Sử dụng obj.id làm key */}
+                                            <g key={obj.id}>
                                                 <polygon
                                                     points={pointsStr}
                                                     fill="rgba(255, 255, 255, 0)"
@@ -736,7 +674,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                         )}
 
                         {/* --- SPOTLIGHT LAYER (z-15) --- */}
-                        {/* Sits between SVG (z-10) and Player (z-20) */}
                         <div
                             id="game-spotlight"
                             className="absolute inset-0 z-15 pointer-events-none transition-opacity duration-200 opacity-0"
@@ -758,16 +695,12 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                                 className="absolute opacity-0 transition-all duration-200 transform scale-75 origin-bottom-right"
                                 style={{
                                     pointerEvents: 'none',
-                                    // DYNAMIC POSITIONING: Based on Character Hitbox Height
                                     bottom: `${CONFIG.RENDER_SIZE / 2}px`,
                                     right: `${CONFIG.CHAR_WIDTH / 2}px`
                                 }}
                             >
                                 <div className="relative bg-white text-black px-4 py-2 rounded-2xl shadow-lg border-2 border-slate-200 min-w-[80px] text-center">
-                                    {/* Bubble Tail */}
                                     <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-b-2 border-r-2 border-slate-200 rotate-45 transform"></div>
-
-                                    {/* Animated Dots */}
                                     <div className="flex justify-center gap-1">
                                         <span className="w-2 h-2 bg-slate-800 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
                                         <span className="w-2 h-2 bg-slate-800 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
@@ -799,8 +732,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
 
             </div>
             {/* --- SCREEN RECORDER CORE COMPONENT --- */}
-            {/* Chỉ render ScreenRecorderCore khi game đã sẵn sàng hoặc đang ghi
-                hoặc có video đã ghi để hiển thị preview. Điều này giúp kiểm soát vòng đời của nó. */}
             {(isGameReady || isScreenRecording || showRecordedVideo) && (
                 <ScreenRecorderCore ref={screenRecorderRef} />
             )}
