@@ -155,3 +155,10 @@ export interface UpdateLocationResponse {
   success: boolean;
   message?: string;
 }
+
+export const AUDIO_PATHS = {
+  RUNNING: './assets/run.mp3', // Đảm bảo đường dẫn này đúng với vị trí file của bạn
+  JUMP: './assets/jump.mp3',
+  LAND: './assets/land.mp3',
+  DANCE: './assets/dance_music.mp3',
+};

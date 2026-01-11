@@ -5,7 +5,7 @@ import { BackgroundService } from './BackgroundService';
 import ScreenRecorderCore, { ScreenRecorderRef } from './ui/ScreenRecord'; // Import ScreenRecorderCore và interface của nó
 
 // NEW: Import the LocalDetectedObject type and our new hook
-import { LocalDetectedObject, LocationData, APIDetectedObject, UpdateLocationResponse } from '../types'; // Đảm bảo đường dẫn đúng
+import { LocalDetectedObject, LocationData, APIDetectedObject, UpdateLocationResponse, AUDIO_PATHS } from '../types'; // Đảm bảo đường dẫn đúng
 import { useCollisionDetection } from '../hooks/useCollisionDetection';
 
 interface GameAssets {
@@ -164,6 +164,20 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         onGround: false
     });
 
+    // NEW: Audio Refs
+    const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({
+        running: null,
+        jump: null,
+        land: null,
+        dance: null,
+    });
+
+    // NEW: Sử dụng useRef thay vì useState cho trạng thái phát âm thanh lặp
+    const isPlayingRunningRef = useRef(false);
+    const isPlayingDancingRef = useRef(false);
+    const lastStateRef = useRef<string>('idle'); // Để theo dõi trạng thái trước đó của nhân vật
+    const wasOnGroundRef = useRef<boolean>(true); // Để theo dõi trạng thái tiếp đất
+
     // scaledPolygonsRef is less critical now for collision due to useCollisionDetection,
     // but can still be used for rendering visual polygon outlines if needed.
     const scaledPolygonsRef = useRef<number[][][]>([]);
@@ -253,6 +267,34 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         };
     }, [isGameReady]);
 
+    // NEW: Initialize Audio Elements
+    useEffect(() => {
+        audioRefs.current.running = new Audio(AUDIO_PATHS.RUNNING);
+        audioRefs.current.jump = new Audio(AUDIO_PATHS.JUMP);
+        audioRefs.current.land = new Audio(AUDIO_PATHS.LAND);
+        audioRefs.current.dance = new Audio(AUDIO_PATHS.DANCE);
+
+        // Optional: Loop running/dancing sound
+        if (audioRefs.current.running) audioRefs.current.running.loop = true;
+        if (audioRefs.current.dance) audioRefs.current.dance.loop = true;
+
+        // Optional: Set volume
+        Object.values(audioRefs.current).forEach(audio => {
+            if (audio) audio.volume = 0.5;
+        });
+
+        // Cleanup on unmount
+        return () => {
+            Object.values(audioRefs.current).forEach(audio => {
+                if (audio) {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.src = ''; // Clear src to release resources
+                }
+            });
+        };
+    }, []); // Chạy một lần khi mount
+
     // --- VIEW CALCULATION ---
     useLayoutEffect(() => {
         if (!containerRef.current || !bgMeta) return;
@@ -329,6 +371,8 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             const player = gameState.current;
             const k = keys.current;
 
+            const prevOnGround = wasOnGroundRef.current; // Lấy trạng thái onGround trước đó
+
             // A. Horizontal Movement
             player.vx = 0;
 
@@ -364,13 +408,18 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             player.onGround = false;
             let newGroundPolygon: LocalDetectedObject | null = null;
 
-            if (player.vy >= 0) {
+            if (player.vy >= 0) { // Chỉ kiểm tra va chạm đất khi đang đi xuống
                 const collisionResult = checkGroundCollision(player.x, player.y);
                 if (collisionResult !== null) {
                     player.y = collisionResult.groundY - CONFIG.CHAR_HEIGHT;
                     player.vy = 0;
                     player.onGround = true;
                     newGroundPolygon = collisionResult.polygon;
+
+                    // NEW: Play land sound when hitting ground
+                    if (!prevOnGround && player.onGround) {
+                        audioRefs.current.land?.play().catch(e => console.error("Error playing land sound:", e));
+                    }
                 }
             }
 
@@ -463,10 +512,36 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                     spotlightEl.style.opacity = '0';
                 }
             }
+
+            // NEW: Simplified Audio Playback Logic for looping sounds
+            // --- Running Sound Control ---
+            const shouldPlayRunning = (player.state === 'run' && player.onGround);
+            if (shouldPlayRunning && !isPlayingRunningRef.current) {
+                audioRefs.current.running?.play().catch(e => console.error("Error playing running sound:", e));
+                isPlayingRunningRef.current = true;
+            } else if (!shouldPlayRunning && isPlayingRunningRef.current) {
+                audioRefs.current.running?.pause();
+                audioRefs.current.running!.currentTime = 0; // Reset to start for next play
+                isPlayingRunningRef.current = false;
+            }
+
+            // --- Dancing Sound Control ---
+            const shouldPlayDancing = (player.state === 'dance');
+            if (shouldPlayDancing && !isPlayingDancingRef.current) {
+                audioRefs.current.dance?.play().catch(e => console.error("Error playing dancing sound:", e));
+                isPlayingDancingRef.current = true;
+            } else if (!shouldPlayDancing && isPlayingDancingRef.current) {
+                audioRefs.current.dance?.pause();
+                audioRefs.current.dance!.currentTime = 0; // Reset to start for next play
+                isPlayingDancingRef.current = false;
+            }
+
+            lastStateRef.current = player.state; // Cập nhật trạng thái hiện tại
+            wasOnGroundRef.current = player.onGround; // Cập nhật trạng thái onGround hiện tại
         }
 
         reqRef.current = requestAnimationFrame(update);
-    }, [bgMeta, checkGroundCollision, currentGroundPolygon?.id, data.actions, view, setCurrentGroundPolygon]); // checkGroundCollision is now a dependency
+    }, [bgMeta, checkGroundCollision, currentGroundPolygon?.id, data.actions, view, setCurrentGroundPolygon]);
 
 
     // --- EVENT LISTENERS ---
@@ -484,6 +559,8 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                 gameState.current.vy = CONFIG.JUMP_FORCE;
                 gameState.current.onGround = false;
                 gameState.current.state = 'jump';
+                // NEW: Play jump sound
+                audioRefs.current.jump?.play().catch(e => console.error("Error playing jump sound:", e));
             }
 
             // DROP DOWN MECHANIC
