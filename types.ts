@@ -112,7 +112,9 @@ export interface DetectedObject {
   name: string;
   polygon: [number, number][]; // [[x1, y1], [x2, y2], ...]
   id_polygon: number;
-  bbox: number[] | null
+  bbox: number[] | null;
+  audioUrl?: string | null;
+  ttsText?: string | null;
 }
 
 export interface GameResourcesResponse {
@@ -134,6 +136,8 @@ export interface LocalDetectedObject {
   name: string;
   polygon: number[][];
   bbox: number[] | null;
+  audioUrl?: string | null; // <-- THÊM TRƯỜNG NÀY
+  ttsText?: string | null; // <-- THÊM TRƯỜNG NÀY (Để lưu trữ văn bản nếu chuyển đổi từ TTS)
 }
 
 export interface APIDetectedObject {
@@ -141,6 +145,8 @@ export interface APIDetectedObject {
   name: string;
   polygon: number[][];
   bbox: number[] | null;
+  audioUrl?: string | null;
+  ttsText?: string | null;
 }
 
 export interface LocationData {
@@ -149,6 +155,8 @@ export interface LocationData {
   bbox?: number[]; // Optional[List[float]]
   audio_base64?: string; // Optional[str]
   audio_format?: string; // Optional[str]
+  audioUrl?: string | null;
+  ttsText?: string | null;
 }
 
 export interface UpdateLocationResponse {

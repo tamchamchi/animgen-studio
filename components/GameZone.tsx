@@ -1,23 +1,24 @@
+// src/components/GameZone.tsx
+
 import React, { useEffect, useState, useRef, useLayoutEffect, useCallback } from 'react';
-import { Terminal, RefreshCw, Maximize, Minimize, Lock, Eye, EyeOff, Lightbulb, LightbulbOff, Video, VideoOff } from 'lucide-react';
+import { Terminal, RefreshCw, Maximize, Minimize, Lock, Eye, EyeOff, Lightbulb, LightbulbOff, Video, VideoOff, Volume2 } from 'lucide-react';
 import { getGameResources, FILE_BASE_URL, updateCharacterLocation } from '../services/api';
 import { BackgroundService } from './BackgroundService';
-import ScreenRecorderCore, { ScreenRecorderRef } from './ui/ScreenRecord'; // Import ScreenRecorderCore và interface của nó
+import ScreenRecorderCore, { ScreenRecorderRef } from './ui/ScreenRecord';
 
-// NEW: Import the LocalDetectedObject type and our new hook
-import { LocalDetectedObject, LocationData, APIDetectedObject, UpdateLocationResponse, AUDIO_PATHS } from '../types'; // Đảm bảo đường dẫn đúng
+import { LocalDetectedObject, LocationData, UpdateLocationResponse, AUDIO_PATHS } from '../types'; // Đảm bảo đường dẫn đúng
 import { useCollisionDetection } from '../hooks/useCollisionDetection';
 
 interface GameAssets {
     bgUrl: string | null;
-    objects: LocalDetectedObject[];
+    objects: LocalDetectedObject[]; // Cập nhật type
     actions: Record<string, string>;
 }
 
 interface GameZoneProps {
     sessionId: string | null;
     isGameReady: boolean;
-    onResourcesLoaded: () => void; // New prop for the callback
+    onResourcesLoaded: () => void;
 }
 
 // --- GAME CONFIGURATION ---
@@ -32,17 +33,16 @@ const CONFIG = {
 
     RENDER_SIZE: 256,
 
-    // NEW: Collision thresholds moved to config for use in the hook
-    COLLISION_THRESHOLD_UP: 25, // Ngưỡng "vượt qua" để nhân vật không bị kẹt khi đi lên dốc nhẹ
-    COLLISION_THRESHOLD_DOWN: 10 // Ngưỡng "dưới" để bắt va chạm sớm hơn một chút
+    COLLISION_THRESHOLD_UP: 25,
+    COLLISION_THRESHOLD_DOWN: 10
 };
-const SPOTLIGHT_INNER_RADIUS = 20; // Bán kính vùng sáng đặc
-const SPOTLIGHT_OUTER_RADIUS = 140; // Bán kính vùng sáng mờ dần
+const SPOTLIGHT_INNER_RADIUS = 20;
+const SPOTLIGHT_OUTER_RADIUS = 140;
 const FRAME_DELAY = 1000 / CONFIG.TARGET_FPS;
 
 // --- HOOK: Load Resources & Image Meta ---
-const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourcesLoaded: () => void) => {
-    const [data, setData] = useState<GameAssets>({ bgUrl: null, objects: [], actions: {} });
+const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourcesLoaded: () => void, initialObjects: LocalDetectedObject[]) => {
+    const [data, setData] = useState<GameAssets>({ bgUrl: null, objects: initialObjects, actions: {} }); // Khởi tạo với initialObjects
     const [bgMeta, setBgMeta] = useState<{ width: number; height: number; ratio: number } | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -59,7 +59,6 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourc
 
                 const gifUrls = res.action_gif_urls || [];
 
-                // Helper to match URLs containing specific keywords
                 const findGif = (keywords: string[]) => {
                     const found = gifUrls.find(url => keywords.some(k => url.toLowerCase().includes(k)));
                     return found ? getFullUrl(found) : '';
@@ -74,27 +73,32 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourc
                     speak: findGif(['speaking', 'speak', 'talk']) || '',
                 };
 
-                // Fallbacks: If idle is missing but we have GIFs, use the first one available
                 if (!actions.idle && gifUrls.length > 0) {
                     actions.idle = getFullUrl(gifUrls[0]) || '';
                 }
 
-                // Fallbacks for movement if specific ones missing
                 if (!actions.run) actions.run = actions.idle;
                 if (!actions.jump) actions.jump = actions.idle;
 
+                // Khi tải từ API, chúng ta chưa có audioUrl, nên giữ nguyên logic ban đầu
+                // hoặc nếu API có trả về, bạn sẽ merge ở đây.
+                // Ở đây, chúng ta sẽ để BackgroundService là nơi duy nhất gán audioUrl
                 const mappedObjects: LocalDetectedObject[] = (res.detected_objects || []).map((obj, index) => ({
-                    id: obj.id_polygon || `poly-${index}`,
+                    id: obj.id_polygon ? obj.id_polygon.toString() : `poly-${index}`, // Ensure string ID
                     name: obj.name || 'Object',
                     polygon: obj.polygon || [],
                     bbox: obj.bbox || []
-                })).filter((o) => o.polygon.length > 0);
+                })).filter((o) => o.polygon && o.polygon.length > 0);
 
-                setData({
+                setData(prev => ({ // Cập nhật data nhưng giữ lại audioUrl từ initialObjects
+                    ...prev,
                     bgUrl: getFullUrl(res.background_url),
-                    objects: mappedObjects,
+                    objects: mappedObjects.map(newObj => {
+                        const existing = prev.objects.find(oldObj => oldObj.id === newObj.id);
+                        return { ...newObj, audioUrl: existing?.audioUrl, ttsText: existing?.ttsText };
+                    }),
                     actions
-                });
+                }));
 
                 onResourcesLoaded();
 
@@ -121,11 +125,14 @@ const useGameResources = (gameId: string | null, shouldFetch: boolean, onResourc
         };
     }, [data.bgUrl]);
 
+    // Added a setter for `data` for BackgroundService to update objects
     return { data, setData, bgMeta, loading, error };
 };
 
 export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onResourcesLoaded }) => {
-    const { data, setData, bgMeta, loading } = useGameResources(sessionId, isGameReady, onResourcesLoaded);
+    // Pass an empty array initially, BackgroundService will update it
+    const [backgroundServiceObjects, setBackgroundServiceObjects] = useState<LocalDetectedObject[]>([]);
+    const { data, setData, bgMeta, loading } = useGameResources(sessionId, isGameReady, onResourcesLoaded, backgroundServiceObjects);
     const containerRef = useRef<HTMLDivElement>(null);
     const [view, setView] = useState({
         scale: 1,
@@ -139,19 +146,16 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showBackground, setShowBackground] = useState(true);
 
-    // Spotlight Effect State
     const [spotlightActive, setSpotlightActive] = useState(false);
-    const spotlightActiveRef = useRef(false); // Ref for access inside requestAnimationFrame
+    const spotlightActiveRef = useRef(false);
 
-    // NEW: State to store the polygon the character is currently standing on
     const [currentGroundPolygon, setCurrentGroundPolygon] = useState<LocalDetectedObject | null>(null);
-
 
     // --- SCREEN RECORDER STATE & REF ---
     const screenRecorderRef = useRef<ScreenRecorderRef | null>(null);
     const [isScreenRecording, setIsScreenRecording] = useState<boolean>(false);
     const [isScreenRecordingPaused, setIsScreenRecordingPaused] = useState<boolean>(false);
-    const [showRecordedVideo, setShowRecordedVideo] = useState<boolean>(false); // To control video preview display
+    const [showRecordedVideo, setShowRecordedVideo] = useState<boolean>(false);
 
     // --- GAME STATE ---
     const gameState = useRef({
@@ -170,25 +174,21 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         jump: null,
         land: null,
         dance: null,
+        speech: null, // <-- THÊM AUDIO PLAYER CHO SPEECH
     });
 
-    // NEW: Sử dụng useRef thay vì useState cho trạng thái phát âm thanh lặp
     const isPlayingRunningRef = useRef(false);
     const isPlayingDancingRef = useRef(false);
-    const lastStateRef = useRef<string>('idle'); // Để theo dõi trạng thái trước đó của nhân vật
-    const wasOnGroundRef = useRef<boolean>(true); // Để theo dõi trạng thái tiếp đất
-
-    // scaledPolygonsRef is less critical now for collision due to useCollisionDetection,
-    // but can still be used for rendering visual polygon outlines if needed.
-    const scaledPolygonsRef = useRef<number[][][]>([]);
+    const lastStateRef = useRef<string>('idle');
+    const wasOnGroundRef = useRef<boolean>(true);
 
     const keys = useRef<Record<string, boolean>>({});
     const reqRef = useRef<number | undefined>(undefined);
     const lastTimeRef = useRef<number>(0);
 
-    // NEW: Use the custom collision detection hook
+    // NEW: Update useCollisionDetection to use data.objects (which now has audioUrls)
     const { checkGroundCollision } = useCollisionDetection(
-        data.objects,
+        data.objects, // Use objects from the useGameResources hook
         view.scale,
         view.width,
         view.height,
@@ -207,13 +207,10 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         spotlightActiveRef.current = newState;
     };
 
-    // Modified to link background visibility with spotlight
     const toggleBackground = () => {
         const nextShowBg = !showBackground;
         setShowBackground(nextShowBg);
 
-        // Auto-enable spotlight when hiding background (Dark Mode)
-        // Auto-disable spotlight when showing background
         const shouldSpotlight = !nextShowBg;
         setSpotlightActive(shouldSpotlight);
         spotlightActiveRef.current = shouldSpotlight;
@@ -224,14 +221,14 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         await screenRecorderRef.current?.start();
         setIsScreenRecording(true);
         setIsScreenRecordingPaused(false);
-        setShowRecordedVideo(false); // Hide old video when starting new recording
+        setShowRecordedVideo(false);
     };
 
     const handleStopScreenRecording = () => {
         screenRecorderRef.current?.stop();
         setIsScreenRecording(false);
         setIsScreenRecordingPaused(false);
-        setShowRecordedVideo(true); // Can show video preview after download
+        setShowRecordedVideo(true);
     };
 
     const handlePauseScreenRecording = () => {
@@ -246,7 +243,9 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
 
     const toLocationData = (obj: LocalDetectedObject): LocationData => ({
         ...obj,
-        bbox: obj.bbox ?? undefined, // ensure `undefined` instead of `null`
+        bbox: obj.bbox ?? undefined,
+        audioUrl: obj.audioUrl ?? undefined, // <-- THÊM audioUrl
+        ttsText: obj.ttsText ?? undefined, // <-- THÊM ttsText
     });
 
     // --- useEffect to sync screen recording state from Core ---
@@ -258,7 +257,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                     setIsScreenRecording(screenRecorderRef.current.getIsRecording());
                     setIsScreenRecordingPaused(screenRecorderRef.current.getIsPaused());
                 }
-            }, 200); // Update state every 200ms
+            }, 200);
         }
         return () => {
             if (intervalId) {
@@ -273,27 +272,25 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         audioRefs.current.jump = new Audio(AUDIO_PATHS.JUMP);
         audioRefs.current.land = new Audio(AUDIO_PATHS.LAND);
         audioRefs.current.dance = new Audio(AUDIO_PATHS.DANCE);
+        audioRefs.current.speech = new Audio(); // Initialize speech audio
 
-        // Optional: Loop running/dancing sound
         if (audioRefs.current.running) audioRefs.current.running.loop = true;
         if (audioRefs.current.dance) audioRefs.current.dance.loop = true;
 
-        // Optional: Set volume
         Object.values(audioRefs.current).forEach(audio => {
             if (audio) audio.volume = 0.5;
         });
 
-        // Cleanup on unmount
         return () => {
             Object.values(audioRefs.current).forEach(audio => {
                 if (audio) {
                     audio.pause();
                     audio.currentTime = 0;
-                    audio.src = ''; // Clear src to release resources
+                    audio.src = '';
                 }
             });
         };
-    }, []); // Chạy một lần khi mount
+    }, []);
 
     // --- VIEW CALCULATION ---
     useLayoutEffect(() => {
@@ -312,14 +309,12 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             let newScale, rW, rH, offX, offY;
 
             if (cRatio > iRatio) {
-                // Container is wider -> Fit Height (Pillarbox)
                 newScale = cH / iH;
                 rW = iW * newScale;
                 rH = cH;
                 offX = (cW - rW) / 2;
                 offY = 0;
             } else {
-                // Container is taller -> Fit Width (Letterbox)
                 newScale = cW / iW;
                 rW = cW;
                 rH = iH * newScale;
@@ -329,7 +324,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
 
             setView({ scale: newScale, offsetX: offX, offsetY: offY, width: rW, height: rH });
 
-            // Initial spawn logic
             if (gameState.current.y === 0) {
                 gameState.current.y = rH - CONFIG.CHAR_HEIGHT - 20;
             }
@@ -339,20 +333,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
         resizeObserver.observe(containerRef.current);
         return () => resizeObserver.disconnect();
     }, [bgMeta, isFullscreen]);
-
-    // Update scaled polygons based on calculated view scale - This is now primarily for rendering, not collision
-    useEffect(() => {
-        if (data.objects.length > 0 && view.scale > 0) {
-            scaledPolygonsRef.current = data.objects.map(obj =>
-                obj.polygon.map(p => [p[0] * view.scale, p[1] * view.scale])
-            );
-        } else {
-            // Default floor if no polygons found
-            const floorY = view.height - 20;
-            const width = view.width;
-            scaledPolygonsRef.current = [[[0, floorY], [width, floorY], [width, floorY + 50], [0, floorY + 50]]];
-        }
-    }, [data.objects, view.scale, view.width, view.height]);
 
 
     // --- GAME LOOP ---
@@ -371,10 +351,15 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             const player = gameState.current;
             const k = keys.current;
 
-            const prevOnGround = wasOnGroundRef.current; // Lấy trạng thái onGround trước đó
+            const prevOnGround = wasOnGroundRef.current;
 
-            // A. Horizontal Movement
             player.vx = 0;
+
+            // NEW: Dừng âm thanh nói nếu không ở trạng thái SPEAK
+            if (player.state !== 'speak' && audioRefs.current.speech && !audioRefs.current.speech.paused) {
+                audioRefs.current.speech.pause();
+                audioRefs.current.speech.currentTime = 0;
+            }
 
             if (player.onGround && player.state !== 'speak' && player.state !== 'dance' && player.state !== 'wave') {
                 player.state = 'idle';
@@ -383,16 +368,15 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             if (k['ArrowRight']) {
                 player.vx = CONFIG.SPEED;
                 player.facingRight = true;
-                if (player.onGround) player.state = 'run';
+                if (player.onGround && player.state !== 'speak') player.state = 'run';
             }
             else if (k['ArrowLeft']) {
                 player.vx = -CONFIG.SPEED;
                 player.facingRight = false;
-                if (player.onGround) player.state = 'run';
+                if (player.onGround && player.state !== 'speak') player.state = 'run';
             }
 
-            // B. Vertical Movement
-            if (!player.onGround) {
+            if (!player.onGround && player.state !== 'speak') { // Giữ nguyên trạng thái speak khi nhảy
                 player.state = 'jump';
             }
 
@@ -400,15 +384,13 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             player.x += player.vx;
             player.y += player.vy;
 
-            // Screen Bounds (Relative to the rendered image, not container)
             if (player.x < 0) player.x = 0;
             if (player.x > view.width - CONFIG.CHAR_WIDTH) player.x = view.width - CONFIG.CHAR_WIDTH;
 
-            // C. Ground Collision
             player.onGround = false;
             let newGroundPolygon: LocalDetectedObject | null = null;
 
-            if (player.vy >= 0) { // Chỉ kiểm tra va chạm đất khi đang đi xuống
+            if (player.vy >= 0) {
                 const collisionResult = checkGroundCollision(player.x, player.y);
                 if (collisionResult !== null) {
                     player.y = collisionResult.groundY - CONFIG.CHAR_HEIGHT;
@@ -416,16 +398,14 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                     player.onGround = true;
                     newGroundPolygon = collisionResult.polygon;
 
-                    // NEW: Play land sound when hitting ground
                     if (!prevOnGround && player.onGround) {
                         audioRefs.current.land?.play().catch(e => console.error("Error playing land sound:", e));
                     }
                 }
             }
 
-            // Fallback: Floor collision (nếu nhân vật rơi quá xa)
             if (player.y > view.height - CONFIG.CHAR_HEIGHT) {
-                if (player.y > view.height + 100) { // Nếu rơi quá xa, reset vị trí
+                if (player.y > view.height + 100) {
                     player.x = 50;
                     player.y = 0;
                     player.vy = 0;
@@ -433,32 +413,26 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                 }
             }
 
-            // Update currentGroundPolygon only if there's a change in ID
+            // Update currentGroundPolygon and potentially call API
             if (currentGroundPolygon?.id !== newGroundPolygon?.id) {
                 setCurrentGroundPolygon(newGroundPolygon);
 
-                // Kiểm tra xem newGroundPolygon có tồn tại trước khi gọi API
                 if (newGroundPolygon) {
                     try {
-                        // Gọi API updateCharacterLocation với dữ liệu từ newGroundPolygon
-                        // newGroundPolygon cần có kiểu tương thích với LocationData
                         const response: UpdateLocationResponse = await updateCharacterLocation(toLocationData(newGroundPolygon));
-
                         if (response.success) {
                             console.log("Cập nhật vị trí ground polygon thành công:", response.message);
-                            // Bạn có thể thêm logic xử lý thành công tại đây, ví dụ: hiển thị thông báo
                         } else {
                             console.error("Cập nhật vị trí ground polygon thất bại:", response.message);
-                            // Xử lý lỗi từ server
                         }
                     } catch (error) {
                         console.error("Lỗi khi gọi API cập nhật vị trí ground polygon:", error);
-                        // Xử lý lỗi mạng hoặc lỗi khác trong quá trình gọi API
                     }
                 } else {
-                    console.warn("newGroundPolygon is null or undefined, skipping API call.");
+                    console.warn("newGroundPolygon is null/undefined, skipping API call.");
                 }
             }
+
 
             // D. Render Updates
             const playerEl = document.getElementById('game-player');
@@ -471,7 +445,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
 
             // 1. Update Player
             if (playerEl && playerImg) {
-                // Important: Add view.offsetX/Y to align with center-positioned background
                 playerEl.style.transform = `translate(${player.x + visualOffsetX + view.offsetX}px, ${player.y + visualOffsetY + view.offsetY}px)`;
                 playerImg.style.transform = player.facingRight ? 'scaleX(1)' : 'scaleX(-1)';
 
@@ -502,7 +475,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
             // 2. Update Spotlight
             if (spotlightEl) {
                 if (spotlightActiveRef.current) {
-                    // Calculate visual center of the player
                     const cx = player.x + visualOffsetX + view.offsetX + (CONFIG.RENDER_SIZE / 2);
                     const cy = player.y + visualOffsetY + view.offsetY + (CONFIG.RENDER_SIZE / 1.5);
 
@@ -521,7 +493,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                 isPlayingRunningRef.current = true;
             } else if (!shouldPlayRunning && isPlayingRunningRef.current) {
                 audioRefs.current.running?.pause();
-                audioRefs.current.running!.currentTime = 0; // Reset to start for next play
+                audioRefs.current.running!.currentTime = 0;
                 isPlayingRunningRef.current = false;
             }
 
@@ -532,16 +504,31 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                 isPlayingDancingRef.current = true;
             } else if (!shouldPlayDancing && isPlayingDancingRef.current) {
                 audioRefs.current.dance?.pause();
-                audioRefs.current.dance!.currentTime = 0; // Reset to start for next play
+                audioRefs.current.dance!.currentTime = 0;
                 isPlayingDancingRef.current = false;
             }
 
-            lastStateRef.current = player.state; // Cập nhật trạng thái hiện tại
-            wasOnGroundRef.current = player.onGround; // Cập nhật trạng thái onGround hiện tại
+            // NEW: Speech Sound Control
+            const speechAudio = audioRefs.current.speech;
+            if (player.state === 'speak' && currentGroundPolygon?.audioUrl && speechAudio) {
+                if (speechAudio.src !== currentGroundPolygon.audioUrl) {
+                    speechAudio.src = currentGroundPolygon.audioUrl;
+                    speechAudio.load(); // Reload audio if source changes
+                }
+                if (speechAudio.paused) {
+                    speechAudio.play().catch(e => console.error("Error playing speech sound:", e));
+                }
+            } else if (speechAudio && !speechAudio.paused) {
+                speechAudio.pause();
+                speechAudio.currentTime = 0;
+            }
+
+            lastStateRef.current = player.state;
+            wasOnGroundRef.current = player.onGround;
         }
 
         reqRef.current = requestAnimationFrame(update);
-    }, [bgMeta, checkGroundCollision, currentGroundPolygon?.id, data.actions, view, setCurrentGroundPolygon]);
+    }, [bgMeta, checkGroundCollision, currentGroundPolygon, data.actions, view, sessionId]); // Add sessionId to dependencies
 
 
     // --- EVENT LISTENERS ---
@@ -559,25 +546,24 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                 gameState.current.vy = CONFIG.JUMP_FORCE;
                 gameState.current.onGround = false;
                 gameState.current.state = 'jump';
-                // NEW: Play jump sound
                 audioRefs.current.jump?.play().catch(e => console.error("Error playing jump sound:", e));
             }
 
             // DROP DOWN MECHANIC
             if (e.key === 'ArrowDown' && gameState.current.onGround) {
-                // Push Y down by 30px to exceed the collision threshold (+25px)
                 gameState.current.y += 30;
                 gameState.current.onGround = false;
             }
 
-            if (e.key === 's' || e.key === 'S') gameState.current.state = 'speak';
-            if (e.key === 'd' || e.key === 'D') gameState.current.state = 'dance';
-            if (e.key === 'w' || e.key === 'W') gameState.current.state = 'wave';
+            // S, D, W keys
+            if (e.key.toLowerCase() === 's') gameState.current.state = 'speak';
+            if (e.key.toLowerCase() === 'd') gameState.current.state = 'dance';
+            if (e.key.toLowerCase() === 'w') gameState.current.state = 'wave';
         };
 
         const onKeyUp = (e: KeyboardEvent) => {
             keys.current[e.key] = false;
-            if (['s', 'S', 'd', 'D', 'w', 'W'].includes(e.key) && gameState.current.onGround) {
+            if (['s', 'S', 'd', 'D', 'w', 'W'].includes(e.key.toLowerCase()) && gameState.current.onGround) {
                 gameState.current.state = 'idle';
             }
         };
@@ -595,20 +581,18 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
     }, [bgMeta, isFocused, isFullscreen, update]);
 
     // --- OTHER HANDLERS ---
-    const handleAnalysisComplete = (bgDataUrl: string, platforms: APIDetectedObject[]) => {
-        const mappedObjects: LocalDetectedObject[] = platforms.map((p, index) => ({
-            id: p.id_polygon || `poly-${index}`,
-            name: p.name,
-            polygon: p.polygon || [],
-            bbox: p.bbox || []
-        })).filter(p => p.polygon.length > 0);
-
+    // This handler now receives `LocalDetectedObject[]` directly from BackgroundService
+    const handleAnalysisComplete = (bgDataUrl: string, platforms: LocalDetectedObject[]) => {
+        setBackgroundServiceObjects(platforms); // Update local state
+        // This will trigger a re-render and re-fetch of useGameResources if sessionId changes
+        // but for just updating objects, we can directly modify `data` state
         setData(prev => ({
             ...prev,
             bgUrl: bgDataUrl,
-            objects: mappedObjects
+            objects: platforms // Directly update objects with the ones from BackgroundService
         }));
     };
+
 
     const toggleFullscreen = async () => {
         if (!containerRef.current) return;
@@ -639,7 +623,7 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                 <div className="lg:col-span-1 h-full">
                     <BackgroundService
                         sessionId={sessionId}
-                        onAnalysisComplete={handleAnalysisComplete}
+                        onAnalysisComplete={handleAnalysisComplete} // Pass the new handler
                     />
                 </div>
                 <div className="lg:col-span-2 space-y-4">
@@ -653,12 +637,17 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                                     {bgMeta ? `Res: ${bgMeta.width}x${bgMeta.height} | Scale: ${view.scale.toFixed(3)}` : 'Waiting for resources...'}
                                     <p>
                                         On: {currentGroundPolygon ? `${currentGroundPolygon.name} (ID: ${currentGroundPolygon.id})` : 'Air / Default Floor'}
+                                        {currentGroundPolygon?.audioUrl && (
+                                            <span className="ml-2 text-indigo-400">
+                                                <Volume2 size={12} className="inline-block mr-1" />
+                                                Audio Ready
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                             </div>
 
                             <div className="flex items-center gap-2">
-                                {/* Toggle Spotlight */}
                                 <button
                                     onClick={toggleSpotlight}
                                     className="p-2 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-yellow-400 border border-slate-600"
@@ -667,7 +656,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                                     {spotlightActive ? <LightbulbOff size={20} /> : <Lightbulb size={20} />}
                                 </button>
 
-                                {/* Toggle Background Visibility */}
                                 <button
                                     onClick={toggleBackground}
                                     className="p-2 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white border border-slate-600"
@@ -676,7 +664,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                                     {showBackground ? <Eye size={20} /> : <EyeOff size={20} />}
                                 </button>
 
-                                {/* Fullscreen Button (Moved here) */}
                                 <button
                                     onClick={toggleFullscreen}
                                     className="p-2 bg-slate-700/50 hover:bg-slate-700 text-white rounded-lg transition-colors border border-slate-600"
@@ -685,7 +672,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                                     {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
                                 </button>
 
-                                {/* --- SCREEN RECORDER CONTROLS --- */}
                                 {!isScreenRecording ? (
                                     <button
                                         onClick={handleStartScreenRecording}
@@ -744,7 +730,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                         {loading && <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900"><RefreshCw className="animate-spin text-indigo-500 w-8 h-8" /></div>}
                         {!isGameReady && !loading && <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 text-slate-400"><Lock className="w-10 h-10 mb-2" /><p>Complete Animation Step first</p></div>}
 
-                        {/* Background Image - Toggles Visibility */}
                         {data.bgUrl && showBackground && (
                             <img
                                 src={data.bgUrl}
@@ -753,7 +738,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                             />
                         )}
 
-                        {/* SVG Layer for Polygons */}
                         {bgMeta && (
                             <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
                                 <g transform={`translate(${view.offsetX}, ${view.offsetY})`}>
@@ -777,14 +761,12 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                             </svg>
                         )}
 
-                        {/* --- SPOTLIGHT LAYER (z-15) --- */}
                         <div
                             id="game-spotlight"
                             className="absolute inset-0 z-15 pointer-events-none transition-opacity duration-200 opacity-0"
                             style={{ willChange: 'background' }}
                         ></div>
 
-                        {/* Player Character Container */}
                         <div
                             id="game-player"
                             className="absolute z-20 will-change-transform top-0 left-0"
@@ -793,7 +775,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                                 height: CONFIG.RENDER_SIZE,
                             }}
                         >
-                            {/* --- SPEECH BUBBLE --- */}
                             <div
                                 id="game-bubble"
                                 className="absolute opacity-0 transition-all duration-200 transform scale-75 origin-bottom-right"
@@ -835,7 +816,6 @@ export const GameZone: React.FC<GameZoneProps> = ({ sessionId, isGameReady, onRe
                 </div>
 
             </div>
-            {/* --- SCREEN RECORDER CORE COMPONENT --- */}
             {(isGameReady || isScreenRecording || showRecordedVideo) && (
                 <ScreenRecorderCore ref={screenRecorderRef} />
             )}
