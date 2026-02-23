@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { FileUpload } from './ui/FileUpload';
-import { analyzeBackgroundModel, analyzeBackgroundSvg, convertTextToSpeech} from '../services/api';
+import { analyzeBackgroundModel, analyzeBackgroundSvg, convertTextToSpeech, API_BASE_URL } from '../services/api';
 import { DetectedObject, LocalDetectedObject } from '../types'; // Cập nhật import
 import { Layers, Scan, Loader2, AlertCircle, Settings2, Info, Volume2, Save, X } from 'lucide-react'; // Thêm icon
 import Modal from './ui/CreateAudioModal'; // Bạn sẽ cần tạo một component Modal đơn giản
@@ -233,16 +233,38 @@ export const BackgroundService: React.FC<BackgroundServiceProps> = ({ sessionId,
             setError("Please enter text for Text-to-Speech.");
             return;
         }
+
+        if (!sessionId) return;
+
+        if (!editingObjectId) {
+            setError("Missing object ID.");
+            return;
+        }
+
         setAudioLoading(true);
         setError(null);
-        setAudioFile(null); // Clear uploaded file if generating TTS
+        setAudioFile(null);
+
         try {
-            const dataUrl = await convertTextToSpeech(currentTtsText);
-            setCurrentAudioUrl(dataUrl);
+            const filename = `${editingObjectId}.wav`;
+            // Backend trả về path file wav
+            const audioPath = await convertTextToSpeech(
+                sessionId,
+                currentTtsText,
+                filename
+            );
+            console.log(audioPath)
+            const fullUrl = `${audioPath}`;
+            console.log(fullUrl)
+
+            setCurrentAudioUrl(fullUrl);
+
             if (audioPlayerRef.current) {
-                audioPlayerRef.current.src = dataUrl;
+                audioPlayerRef.current.src = fullUrl;
                 audioPlayerRef.current.load();
-                audioPlayerRef.current.play().catch(e => console.error("Error playing generated TTS:", e));
+                audioPlayerRef.current.play().catch(e =>
+                    console.error("Error playing generated TTS:", e)
+                );
             }
         } catch (err: any) {
             console.error("TTS Error:", err);
@@ -252,6 +274,7 @@ export const BackgroundService: React.FC<BackgroundServiceProps> = ({ sessionId,
             setAudioLoading(false);
         }
     };
+
 
     const handleSaveAudioConfig = () => {
         if (!editingObjectId) return;
@@ -551,7 +574,7 @@ export const BackgroundService: React.FC<BackgroundServiceProps> = ({ sessionId,
                     </div>
 
                     <div className="space-y-4">
-                        {/* Option 1: Text-to-Speech */}
+                        {/* Option 1: Text-to-Speech
                         <div>
                             <label htmlFor="tts-text" className="block text-sm font-medium text-slate-300 mb-1">
                                 Text-to-Speech
@@ -573,7 +596,7 @@ export const BackgroundService: React.FC<BackgroundServiceProps> = ({ sessionId,
                                 {audioLoading ? <Loader2 className="animate-spin" size={16} /> : <Volume2 size={16} />}
                                 Generate Speech
                             </button>
-                        </div>
+                        </div> */}
 
                         <div className="relative flex items-center">
                             <div className="flex-grow border-t border-slate-700"></div>
@@ -597,12 +620,12 @@ export const BackgroundService: React.FC<BackgroundServiceProps> = ({ sessionId,
                         </div>
 
                         {/* Audio Preview */}
-                        {currentAudioUrl && (
+                        {/* {currentAudioUrl && (
                             <div className="mt-4 p-3 bg-slate-700 rounded-md flex items-center justify-between">
                                 <span className="text-sm text-slate-300">Audio Preview:</span>
                                 <audio controls src={currentAudioUrl} ref={audioPlayerRef} className="w-auto h-8"></audio>
                             </div>
-                        )}
+                        )} */}
 
                         {error && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded">{error}</p>}
 

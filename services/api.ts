@@ -162,22 +162,25 @@ export const updateCharacterLocation = async (locationData: LocationData): Promi
   });
 };
 
-export const convertTextToSpeech = async (text: string): Promise<string> => {
-    console.log(`Calling TTS API for text: "${text}"`);
-    // Ví dụ giả định trả về một Data URL
-    // Trong thực tế, bạn sẽ fetch từ backend của mình,
-    // và backend sẽ gọi Google Cloud TTS, AWS Polly, v.v.
-    // và trả về audio file (có thể dưới dạng base64 hoặc đường link tạm).
-    // Ở đây tôi dùng một API public nhỏ để demo
-    // Bạn cần đăng ký khóa API tại voicerss.org và thay thế YOUR_VOICERSS_API_KEY
-    const response = await fetch(`https://api.voicerss.org/?key=YOUR_VOICERSS_API_KEY&hl=en-us&src=${encodeURIComponent(text)}`);
-    if (!response.ok) {
-        throw new Error('Failed to convert text to speech');
+export const convertTextToSpeech = async (
+  animId: string | null,
+  text: string,
+  filename: string = "narration.wav",
+  voice: string = "Kore"
+): Promise<string> => {
+
+  const formData = new FormData();
+  formData.append("text", text);
+  formData.append("filename", filename);
+  formData.append("voice", voice);
+
+  const res = await request<string>(
+    `/background/tts/${animId}`,
+    {
+      method: "POST",
+      body: formData
     }
-    const blob = await response.blob();
-    return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-    });
+  );
+
+  return res;
 };
